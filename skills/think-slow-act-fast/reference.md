@@ -2,42 +2,36 @@
 
 Shapes from the football demo, in TypeScript. Adapt the names to your domain; keep the separation.
 
-## Engine interface
+## Interfaces (from the starter)
+
+The working code is in `starter/src/core/`. The shapes you implement or call:
 
 ```ts
-interface AgentQuestion {
-  agentId: string;
-  identity: string;                      // "#9 Moreau, striker, a strong target man who holds the ball up"
-  situation: Record<string, string>;     // what the agent can see, in words
-  instruction?: string;                  // from the LLM's plan, for this agent only
-  options: { key: string; desc: string; facts: Record<string, number | string | boolean> }[];
-  speculative?: boolean;                 // "when the ball arrives, what will you do?"
-}
+// types.ts
+interface Option { key: string; text: string; facts: Record<string, number | string | boolean> }
+interface AgentQuestion { agentId: string; identity: string; seeing: Record<string, string>; instruction?: string;
+                          question: string; options: Option[]; urgent?: boolean }
+interface Snapshot<C> { group: string; tick: number; context: C; shared: Record<string, unknown>; agents: AgentQuestion[] }
+interface Decision { agentId: string; key: string; probabilities: Record<string, number>; confidence: number }
+interface DecisionEngine { name: string; decide(s: Snapshot): Promise<EngineResult>; decideSync?(s: Snapshot): EngineResult }
 
-interface GroupSnapshot {
-  group: string;                         // a team, a zone, a cell
-  tick: number;                          // state tick the questions were built from
-  phase: string;                         // the coarse situation freshness is checked against
-  sharedState: Record<string, unknown>;  // aim, status, current plan in words: sent once per request
-  agents: AgentQuestion[];
+// scheduler.ts: you implement Domain; one Scheduler per group; call tick(world) every step.
+interface Domain<W, C> {
+  time(w: W): number; tick(w: W): number;
+  snapshot(w: W, group: string): Snapshot<C>;
+  triggerKey(w: W, group: string): string;                    // change => ask now
+  isFresh(w: W, s: Snapshot<C>, d: Decision): boolean;        // still valid?
+  apply(w: W, d: Decision, how: { engine: string; fallback: boolean }): void;
+  urgent?(w: W, group: string): { agentId: string; since: number }[];
 }
+new Scheduler(group, domain, engine /* SystemOneEngine */, fallback /* RuleEngine */, { intervalS: 1/3, maxInFlight: 2, deadlineS: 1, outageErrors: 3 });
 
-interface AgentDecision {
-  agentId: string;
-  key: string;                           // chosen option (sampled or top)
-  probabilities: Record<string, number>; // one per option
-  confidence: number;                    // 0..1
-  speculative?: boolean;
-}
-
-interface DecisionEngine {
-  readonly name: string;                 // "rules", "decision-model", "local-model"
-  readonly hesitates: boolean;           // delay low-confidence actions?
-  readonly maxInFlight?: number;
-  decide(s: GroupSnapshot): Promise<{ decisions: AgentDecision[]; latencyMs: number; inputTokens: number }>;
-  decideSync?(s: GroupSnapshot): { decisions: AgentDecision[] };  // rules: instant, same tick
-}
+// planner.ts + copilot-planner.ts: the slow loop.
+new PlannerLoop(initialPlan, new CopilotPlanner({ planSchema, instructions, model, foundryEndpoint }),
+                (trigger) => report(world, since, trigger), { intervalS: 15, cooldownS: 30 }, onChange);
 ```
+
+The football demo used the same shapes with one group per team, 11 agents per group.
 
 ## One real question and answer
 
@@ -85,7 +79,7 @@ Off-ball agents get the same shape with options like `press_carrier`, `mark_#7`,
 `run_in_behind`, `hold_shape`, each only when code says it makes sense (for example, only the three nearest
 players are offered `press_carrier`).
 
-## Scheduler, per group
+## Scheduler, per group (football version of `starter/src/core/scheduler.ts`)
 
 ```ts
 const INTERVAL_S = 1 / 3;          // cadence

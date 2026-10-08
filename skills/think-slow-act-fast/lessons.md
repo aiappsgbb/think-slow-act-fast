@@ -62,6 +62,23 @@ The demo only lands if people can see both speeds working.
    zooms in, and full-screen moments for goals with a slow replay made it watchable.
 6. **Label the layers in plain words.** "Decision model" and "LLM manager", not product names.
 
+## Building the starter (warehouse)
+
+1. **The same core held for a different domain.** Swapping football for warehouse robots changed only the domain
+   adapter: options, words, freshness, report and plan. The scheduler, engines and planner loop didn't change.
+2. **Reserve at decision time.** Otherwise two robots can pick the same order while the first one hesitates. The
+   starter reserves the order in `apply`, before the robot moves.
+3. **Hard safety stays in code.** A robot below 8% battery goes to charge regardless of the model or the plan.
+   The models choose within a safe space; they never own the safety rule.
+4. **Laya is one-at-a-time.** With `maxInFlight: 1` and six robots per request, Laya answered in 90–300 ms on a
+   laptop GPU with no errors; more in flight only queued.
+5. **A fresh Copilot SDK session per review** kept the planner cheap and predictable; the report and the "last
+   change" line in the prompt are its memory.
+6. **Structured output differs by provider.** Foundry's Responses API took our schema as is; another provider
+   rejected numeric and array bounds. Keep the schema plain and clamp in code.
+7. **Give the planner a real problem.** With a south-zone surge and `own_zone_only`, the south backed up while
+   the north idled. The planner switched to `help_anywhere`, citing the open-order counts per zone.
+
 ## What we'd do again, and what we wouldn't
 
 - **Again:** rules first; one interface for all engines; metrics from day one; a seeded demo mode with boosted

@@ -1,157 +1,202 @@
 ---
 name: think-slow-act-fast
-description: Use when building a system where many agents must act continuously in real time (games, simulations, robot or vehicle fleets, routing, live operations) and calling an LLM for every decision is too slow or too expensive; when splitting work between an LLM planner, a fast decision model and code; or when such a system feels sluggish, erratic, stale or costly.
+description: Use when building a system where many agents must act continuously in real time (games, simulations, robot or vehicle fleets, routing, live operations) and calling an LLM for every decision is too slow or too expensive. Builds the think-slow-act-fast pattern - a decision model (System One API, e.g. Laya locally or TypeSafe Jev hosted) acts for every agent several times a second, a GitHub Copilot SDK planner on a Microsoft Foundry model sets the plan, code keeps both honest - from the runnable starter in this repo. Also use when such a system is sluggish, erratic, stale or costly.
 ---
 
 # Think slow, act fast
 
-## Overview
+## The pattern
 
-Many agents, each deciding several times a second, cannot wait seconds for an LLM. They don't need to. Split
-the work three ways:
+| Layer | Runs | Job | Our default |
+| --- | --- | --- | --- |
+| **Code** | every tick | State, rules, physics, safety. Builds each agent's valid options and the facts about them. Executes choices. | Your app (TypeScript starter in `starter/`) |
+| **Decision model** (fast loop) | ~3× a second per agent, one request per group | Picks one of the options code offered and returns a probability for every option | A **System One** model: Laya locally, TypeSafe Jev hosted |
+| **Planner** (slow loop) | about once a minute, plus on events | Reads a report code writes, decides whether to change the plan, explains why | A **GitHub Copilot SDK** agent on a **Microsoft Foundry** model |
 
-| Layer | Speed | Job |
-| --- | --- | --- |
-| **Code** | Every tick | Physics, rules, state. Works out which options are actually possible and the facts about each one (distance, risk, odds) |
-| **Decision model** | ~250 ms, many per second | Picks one of the options code offered, for every agent, and returns a probability for each option |
-| **LLM** | Seconds, about once a minute | Reads a short report written by code, sets the plan and explains why. Its plan becomes part of every agent's next question |
+The planner thinks slowly about the plan. The decision model acts fast, inside limits code has checked. The plan flows
+into every agent's next question; results flow back in the next report.
 
-The LLM thinks slowly about the big picture. The decision model acts fast, inside limits code has checked.
-Results flow back to the LLM in the next report.
+## The stack we recommend, and why
+
+These are opinions. Each one is swappable behind an interface in the starter, but start here.
+
+| Choice | Default | Why | Swap for |
+| --- | --- | --- | --- |
+| Decision model API | **System One** (`POST /v1/systemone`): shared `state` + typed questions → a probability per option | One call answers a whole group; answers are always one of your options; probabilities give you sampling, hesitation and hand-off for free | Anything that returns a distribution over given options in a few hundred ms |
+| Decision model, local | **Laya** (`pip install "laya[serve]"`, Apache-2.0) | Free, private, ~25–60 ms per question on a laptop GPU. Ideal for development, demos and on-device | |
+| Decision model, hosted | **TypeSafe Jev** (`https://api.typesafe.ai`, model `jev-latest`) | ~235 ms for a batch of 11 questions, scales, no hardware. Same wire protocol as Laya, so it's a config change | |
+| Fallback | **Rule engine** over the same options | Instant, deterministic; the baseline, the test oracle and what runs when the model is late or down | |
+| Planner runtime | **GitHub Copilot SDK** (`@github/copilot-sdk`) | A real agent loop with tools, typed structured output, OpenTelemetry, sessions; the same runtime as Copilot CLI | Direct Responses API calls if you truly need no tools |
+| Planner model | **Microsoft Foundry** deployment via Copilot SDK *bring your own key*, keyless **Entra** auth | Your tenant, your quota, your data boundary; managed identity in Azure, `az login` locally | GitHub Copilot models (signed-in user) for prototyping |
+| Planner output | **Zod schema** with enums, passed to `sendAndWait` | The plan is always executable; no parsing code | |
+| Hosting | App + fast loop in one container (**Azure Container Apps**). Planner in-process; move it to a **Foundry hosted agent** when it needs its own identity or channel | Fewest moving parts; the planner is not latency-critical | |
+| Observability | Your metrics + Copilot SDK **OpenTelemetry** → an OpenTelemetry Collector → **Azure Monitor / Application Insights** connected to your Foundry project | One trace view for planner calls; numbers for the fast loop | |
+| Evaluation | Seeded replays + **Foundry evaluations** on logged (report, plan, outcome) | Compare rules vs model, planner on vs off, model A vs B on the same seeds | |
 
 | File | Read it when |
 | --- | --- |
-| `concepts.md` | The user asks what the pattern is, why it works, or whether their use case fits |
-| `lessons.md` | Designing the fast loop or the slow loop, or before telling the user a design is sound |
-| `reference.md` | You need an interface, a question or answer shape, a schema or a metric definition |
-
-The worked example throughout is a live 11 v 11 football match: 22 players decided by a decision model about
-three times a second each, and an LLM manager per team.
+| `concepts.md` | The user asks what the pattern is, why it works, whether their use case fits |
+| `decision-model.md` | Writing questions; setting up Laya or Jev; the System One contract and its limits |
+| `planner.md` | Building the slow loop with the Copilot SDK on Foundry: setup, code, gotchas, telemetry, hosting |
+| `lessons.md` | Before calling a design sound; when tuning |
+| `reference.md` | Interfaces, real request/response examples, scheduler and planner pseudocode, metrics |
+| `../../starter/` | The runnable starter: copy it and replace the warehouse domain with yours |
 
 ## Rules for the agent running this skill
 
-1. **One step at a time.** Don't start a step until the previous step's **Done when** is true, and show the user
-   the evidence (test output, a log line, a measured number).
-2. **Code owns the facts.** Never let a model invent a position, a price, a distance or a rule. If a decision
-   needs a fact, code computes it and puts it in the question.
-3. **Build the rule-based baseline first.** It is the fallback, the test oracle and the thing you compare against.
-4. **Measure, don't assume.** Latency, decisions per second, stale rate and cost come from the running system.
-5. **Ask before you create** cloud resources or deployments, and say what they will cost. Use the user's own
-   subscription and keys from the environment; never hard-code or print secrets.
-6. **Stay model-neutral.** The pattern needs *a* decision model and *an* LLM. Pick by measured latency, quality
-   and price for the user's case, not by brand.
-7. **If a check fails twice, stop.** Report what you ran, what you saw and the matching row in Common problems.
+1. **Start from the starter.** Copy `starter/`, run it as-is first (rules, then a decision model, then the planner),
+   then replace the warehouse domain. Don't write the scheduler or planner loop from scratch.
+2. **One step at a time.** Don't start a step until its **Done when** is true; show the user the evidence (the
+   status line, a test run, a plan change with its reasoning).
+3. **Code owns the facts.** Positions, distances, prices, odds, rules: code computes them and puts them into the
+   question in words. Models never invent them, and never do maths (compare numbers in code).
+4. **Rules first.** The rule engine is the baseline, the fallback and the test oracle. The system must run on rules
+   alone before any model is added.
+5. **Keyless.** Foundry via Entra (`DefaultAzureCredential`): `az login` locally, managed identity in Azure. Never
+   hard-code or print keys. A hosted decision model key comes from the environment or Key Vault.
+6. **Ask before you create** Azure resources or model deployments; say what they cost. Use the user's subscription.
+7. **Measure, don't assume.** Latency, decisions per second, stale %, fallbacks and cost come from the running system.
+8. **If a check fails twice, stop** and report what you ran, what you saw and the matching row in Common problems.
 
 ## Step 0: confirm the fit
 
-Ask for, or estimate: number of agents, decisions per agent per second, the latency budget for one decision, and
-how often the plan should change. Then do the arithmetic in `concepts.md`.
+Get or estimate: agents, decisions per agent per second, the latency budget for one decision, how often the plan
+should change, and what one LLM call costs and takes. Do the arithmetic in `concepts.md`.
 
-**Done when** you can state, with numbers, why one LLM call per decision won't do (too slow, too costly, or
-both), and what the slow loop's cadence will be. If one LLM call per decision *is* fine, say so and stop: this
-pattern adds moving parts.
+**Done when** you can say, with numbers, why one LLM call per decision won't do, and what the slow loop's cadence
+will be. If one LLM call per decision is fine, say so and stop.
 
-## Step 1: draw the three layers
+## Step 1: run the starter as-is
 
-Write down, for this system:
+```bash
+cp -r starter my-system && cd my-system && npm install
+npm start                                   # rules only: the baseline, no network
+npm test                                    # scheduler freshness, fallbacks, rules
+```
 
-- **Code:** the state, the tick rate, and the rules. The list of actions an agent can take, and the facts code
-  can compute for each.
-- **Decision model:** which agents it decides for, how often, and what one question looks like.
-- **LLM:** what it controls (the plan's fields), what it reads (the report's fields), and what triggers a review.
+Then add a decision model (see `decision-model.md` for setup):
 
-**Done when** every field the LLM can set is used by code or by the decision model's questions, and every fact
-in a question is computed by code.
+```bash
+pip install "laya[serve]" && LAYA_HOST=127.0.0.1 LAYA_MODELS=english laya-serve     # in another terminal
+DECISION_MODEL=laya npm start
+# or hosted:  DECISION_MODEL=jev TYPESAFE_API_KEY=... npm start
+```
 
-## Step 2: build the engine interface and the rule baseline
+Then the planner (see `planner.md`): deploy a model in a Foundry project, give yourself **Cognitive Services
+OpenAI User** on the resource, `az login`, and:
 
-One interface, several engines: rules (instant, deterministic), the decision model, and optionally a local model.
-See `reference.md` for the shape. The rule engine scores the same options with simple weights and a softmax.
+```bash
+PLANNER=foundry FOUNDRY_ENDPOINT=https://<resource>.cognitiveservices.azure.com FOUNDRY_MODEL=<deployment> \
+DECISION_MODEL=laya npm start
+```
 
-**Done when** the system runs end to end on rules alone, with tests, and you can swap engines without touching
-the scheduler.
+**Done when** the status line shows decisions per second, a median latency, a stale rate under 10%, zero errors, and
+at least one `PLAN CHANGE` whose reasoning cites numbers from the report. In our run: about 15–30 decisions a
+second for 12 robots (2,455 in two minutes), Laya at 85–235 ms per group of six after a ~500 ms first call, stale
+3–8%, no fallbacks or errors, and the planner switching to `help_anywhere` when the north idled during a south surge.
 
-## Step 3: write the questions
+## Step 2: model your domain
 
-For each agent, one choice question:
+Replace `src/warehouse/` with your domain. You write four things; the core does the rest.
 
-- **Shared state once per batch:** the group's aim, score or status, the current plan in words.
-- **Per agent:** who it is (role, style), what it can see *in words* (zones, distance bands, pressure), any
-  instruction from the LLM's plan, and only the options code has validated, each with a short plain description
-  carrying the facts ("short pass to Silva, sideways, open lane, likely to arrive").
-- Shuffle the options to counter first-option bias. Filter options by context (don't offer "press the carrier"
-  when your team has the ball).
+1. **World** (`world.ts`): state, a fixed-step `step(dt)`, execution of chosen actions with their odds, and hard
+   safety rules (in the starter, a robot below 8% battery goes to charge whatever anyone decided).
+2. **Domain adapter** (`domain.ts`, implements `Domain<W, C>`):
+   - `snapshot(w, group)`: the group's questions. Only agents that can act now; only valid options, filtered by
+     context and by the plan; each option's text carries the deciding facts in words.
+   - `triggerKey(w, group)`: a signature of what matters; when it changes, the scheduler asks immediately.
+   - `isFresh(w, snap, decision)`: is this answer still valid now? (task still open, agent still free...)
+   - `apply(w, decision)`: act, with a short visible hesitation when confidence < 0.5.
+   - `urgent(w, group)`: delay-critical agents and since when they've waited (they get a rule decision after 1 s).
+3. **Rule score** (`ruleScore`): a few weights per option type. Keep it simple; it only needs to be sensible.
+4. **Plan schema, instructions and report** (`PlanSchema`, `PLANNER_INSTRUCTIONS`, `report()`): see Step 5.
 
-**Done when** a printed question reads like a clear brief to a human player, a batch for the whole group fits the
-model's input budget, and every option key maps to an action code can execute.
+**Done when** `npm start` runs your domain on rules, `npm test` passes, and printing one snapshot reads like a clear
+brief to a human operator.
 
-## Step 4: schedule the fast loop
+## Step 3: write the questions well
 
-- Batch: one request per group (a team, a zone, a cell), all its agents' questions together.
-- Cadence plus triggers: a fixed interval (the football demo used 333 ms) and an immediate request on events
-  that change everything (possession change, a new task, an alarm).
-- Cap requests in flight per group (2 worked). Stamp each request with its state tick.
-- On every answer, check freshness: drop it if a newer answer was already applied, or if the situation it was
-  asked about has changed. Count what you drop.
-- Speculate where the next state is predictable: while a pass is in flight, ask the receiver now what he'll do
-  when it arrives, and apply the answer the moment he controls the ball if it's still valid.
+The fast loop is only as good as its questions. See `decision-model.md` for the full guide. The essentials:
 
-**Done when** the stale rate is measured and under about 10%, and the agent most sensitive to delay (the ball
-carrier) gets a fresh decision within your latency budget.
+- **Shared state once per request**: the goal, the current plan in words, the situation. Short.
+- **Per agent**: identity (role and style: "a fast picker with a small battery"), what it sees *in words*, the
+  planner's instruction for it if any, the question, and 3–8 options.
+- **Each option says why it might be good or bad**: "pick order 17: 6 m away, 3 items, due in 22 s, other zone".
+- **Filter by context in code.** Never offer an option code knows is invalid or pointless.
+- **Fit the model's limits.** Laya reads about 512 tokens per question including state, and about 190 tokens of
+  option text; it is English-only and can't compare numbers. Put key facts first; do comparisons in code.
 
-## Step 5: act on the answers
+**Done when** a model run's choices look purposeful (watch the log, not just the totals) and invalid answers are 0.
 
-- **Sample** from the returned probabilities for variety, or take the top choice when you need determinism.
-  Decide deliberately and say which in the UI.
-- **Low confidence is information.** Below about 0.5, delay the action briefly and show the hesitation.
-- **Execution stays in code.** The model chooses *what*; code decides *how well it worked* (pass success odds,
-  travel time), seeded so runs can be replayed.
+## Step 4: tune the fast loop
 
-**Done when** the system looks purposeful: agents commit to choices, and variety comes from the odds, not noise.
+Defaults in `SchedulerOptions` came from a live 11 v 11 football match and held in the warehouse:
 
-## Step 6: fallbacks
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `intervalS` | 1/3 s | Plus immediate requests on `triggerKey` changes |
+| `maxInFlight` | 2 (Laya: 1) | Laya serves one call at a time; more in flight just queues and goes stale |
+| `deadlineS` | 1 s | Urgent agent with no fresh decision gets a rule decision |
+| `outageErrors` | 3 | Then rules drive the group until the model answers |
+| Sampling | on | `sample: false` for argmax when you need determinism |
+| Hesitation | confidence < 0.5 | Delay 0.2–0.5 s, and show it |
 
-- A delay-critical agent with no fresh decision after a deadline (1 s for the ball carrier) gets a rule decision.
-- After N consecutive errors (3), the rule engine drives the whole group until a request succeeds.
-- Label fallback decisions and count them.
+**Done when** stale is under 10%, fallbacks are rare and explained, and killing the decision model mid-run (stop
+laya-serve) visibly switches to rules and recovers by itself.
 
-**Done when** you can kill the decision model's network mid-run and the system keeps going, visibly on fallback,
-and recovers by itself.
+## Step 5: build the planner
 
-## Step 7: the slow loop
+See `planner.md` for the code and the gotchas. In short:
 
-- **Report built by code, compact:** status, the current plan, numbers for a window (since the last change, at
-  least a few minutes), what the agents chose and how often they hesitated, the opposition's plan.
-- **Strict JSON schema** output with enums for every plan field, a `change` flag, a one-sentence reason for
-  humans, and at most two instructions for named agents.
-- **Triggers:** a regular interval, plus events (a goal, half time, the other side dominating).
-- **Cooldown:** after a change, give it time (8 match minutes in the demo) before the next regular review. Events
-  can still trigger one. Tell the model when it last changed things, so it doesn't flip-flop.
-- The new plan flows into every agent's next question. The next report shows whether it worked.
+- **Plan schema in Zod**, every field an enum or a number that code clamps, plus up to two instructions for named
+  agents (no `.min()/.max()/.int()` on numbers or arrays: some providers reject bounds; clamp in code). The planner returns `{ change, plan, reasoning }`.
+- **Report built by code**: numbers for a window (since the last change, at least ~30 s or a few minutes), by
+  zone or group; what agents chose and how often they hesitated; the current plan; the last change and its age.
+- **Triggers and cooldown**: a regular interval, event triggers (overdue work, an alarm, a goal), and a cooldown
+  after a change. Never let an event shorten a cooldown accidentally (take the later time).
+- **Copilot SDK session per review**, Foundry model via bring-your-own-key, only your tools (`availableTools`),
+  typed result with `sendAndWait(prompt, schema)`.
+- **The plan reaches the agents**: it's in the shared state of every question and filters the options code offers.
 
-**Done when** the LLM changes the plan a handful of times per session, each change has a reason tied to numbers in
-the report, and you can see agents' choices shift afterwards.
+**Done when** the planner changes the plan a handful of times per run, each change cites numbers, the agents'
+choices visibly shift afterwards, and it does not flip-flop.
 
-## Step 8: measure and show it
+## Step 6: observe, evaluate, ship
 
-Track per group: p50 and p95 latency, decisions applied per second, stale %, fallbacks, errors, input tokens per
-request, cost so far and cost per hour. For the LLM: calls, changes, latency, cost.
+- **Metrics** per group (the starter prints them): p50/p95, decisions/s, stale %, invalid, fallbacks, errors,
+  tokens per request, cost. Planner: reviews, changes, latency, errors.
+- **Traces**: pass `telemetry: { otlpEndpoint }` to `CopilotClient`, pointing at an OpenTelemetry Collector that
+  exports to Azure Monitor (Application Insights) connected to your Foundry project, so planner sessions and tool calls
+  show up alongside your app's spans.
+- **Evaluate on replays**: same seeds, compare rules vs decision model, planner off vs on, model A vs B. Log every
+  (report, plan, reasoning, outcome) and score the planner's reasoning with Foundry evaluations.
+- **Ship**: one container for app + fast loop on Azure Container Apps with a managed identity that has Cognitive
+  Services OpenAI User on the Foundry resource. Laya runs as a sidecar container; Jev needs only the key in Key Vault.
 
-If people will watch it, make the decisions visible: the current agent's choice with its odds, a pulse each time
-an agent gets a new decision, and a card when the LLM changes the plan with its reason. See `lessons.md`.
+**Done when** you have a dashboard or log with the metrics above, and a replay comparison that shows the model and
+the planner each earn their place.
 
-**Done when** the numbers are on screen or in a log, and someone watching for 30 seconds can say what each layer
-is doing.
+## Step 7: make it visible (demos)
+
+If people will watch it, show both speeds working: the current agent's choice with its odds, a pulse each time an
+agent gets a new decision, the planner's status ("reviewing"), a card when it changes the plan with its reasoning,
+and live numbers (decisions/s, median decision time, cost). See `lessons.md`.
 
 ## Common problems
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Agents freeze, then jump | Requests only on a timer; long waits for the delay-critical agent | Add event triggers, speculative questions, and the carrier fallback |
-| Stale rate above 15% | Too many requests in flight, or freshness rules too strict | Cap in flight at 2, trigger on the events that matter, check rules against the snapshot, not the present |
-| Choices look random | Options too similar, or descriptions missing the deciding fact | Put the numbers that matter into each option's words; drop options code knows are bad |
-| Same option every time | First-option bias, or argmax | Shuffle options; sample from the probabilities |
-| Agents clump together | Every agent is offered the same target | Code ranks agents by distance and offers chase or press only to the nearest few (three in the demo); the rest get positional options |
-| LLM changes the plan every review | No cooldown, no memory of the last change | Cooldown after a change; put the last change and its age in the report; tell it not to change without evidence |
-| LLM never changes anything | Report too vague, or the prompt is too conservative | Add per-zone numbers and agent behaviour to the report; give explicit triggers for change |
-| Cost climbs | Questions too long, or too many requests | One request per group; shared state once; compact option text; measure tokens per request |
+| Agents freeze, then jump | Requests only on a timer | Add `triggerKey` signals for the events that matter; check `deadlineS` |
+| Stale rate above 15% | Too many in flight, or freshness too strict | `maxInFlight` 1–2; compare against the snapshot's context, not unrelated state |
+| Choices look random | Options too similar, deciding fact missing from the text | Put the numbers that matter into each option's words; drop options code knows are bad |
+| Same option every time | Position bias or argmax | Options are shuffled in `SystemOneEngine`; keep `sample` on |
+| Two agents chase the same task | Reservation happens too late | Reserve in `apply` (the starter assigns the order at decision time) |
+| Laya answers look arbitrary | Over its limits: long state, too many options, non-English, numeric comparisons | Shorten; ≤ 8 options; English; compare in code and say "closer than the others" |
+| `systemone 422` | Malformed question | The message names the question and field; usually criteria too long or empty |
+| `CopilotClient was created with mode: 'empty' but neither 'baseDirectory'...` | Server mode needs a session store | Pass `baseDirectory` (the starter uses `.copilot-home`) |
+| `400 Function tools with reasoning_effort are not supported ... /v1/chat/completions` | Reasoning model on the chat route | `wireApi: 'responses'` in the provider config |
+| `401` from Foundry | Wrong token scope or role | Scope `https://cognitiveservices.azure.com/.default`; role Cognitive Services OpenAI User; `type: 'azure'`, host-only `baseUrl` |
+| `400 output_config.format.schema: ... 'minimum'/'maximum'/'maxItems' not supported` | Some providers reject numeric and array bounds in structured output (and Zod's `.int()` adds bounds). Use plain `z.number()` and `z.array()`, then round and clamp in code |
+| Planner changes the plan every review | No cooldown, no memory | Cooldown after a change; last change and its age in the prompt; "change only on evidence" |
+| Planner never changes anything | Report too vague | Per-zone numbers, overdue counts, agent behaviour; explicit event triggers |
+| Cost climbs | Long questions or too many requests | One request per group; short shared state; compact option text; measure tokens per request |

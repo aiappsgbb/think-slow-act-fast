@@ -1,0 +1,23 @@
+{
+  "name": "think-slow-act-fast-starter",
+  "private": true,
+  "type": "module",
+  "description": "Starter for the think-slow-act-fast pattern: a decision model acts for every agent, an LLM planner (GitHub Copilot SDK on Microsoft Foundry) sets the plan, code keeps both honest.",
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "start": "tsx src/warehouse/run.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@azure/identity": "^4.13.0",
+    "@github/copilot-sdk": "1.0.17",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

@@ -12,27 +12,50 @@ We built it into a live 11 v 11 football match: 22 players deciding about three 
 manager per team changing the tactics, around 50 decisions a second, a median decision in about 235 ms, and a
 whole 90-minute match for under 40 cents.
 
-This repo is one skill that takes you, or your coding agent, from "is this the right pattern?" to a working
-system, with the lessons from building it.
+This repo has two parts:
+
+- **A skill** your coding agent can follow, from "is this the right pattern?" to a working system, with the lessons
+  from building it.
+- **A runnable starter** (`starter/`): a warehouse of 12 robots where a decision model picks every robot's next job
+  and a planner changes the fleet's plan when a surge hits. Copy it and replace the warehouse with your domain.
+
+## The stack we recommend
+
+The pattern is model-agnostic; the starter is opinionated.
+
+| Layer | Default |
+| --- | --- |
+| Decision model (fast loop) | The **System One** API: **Laya** locally (open source, Apache-2.0) or **TypeSafe Jev** hosted. Same wire protocol, one config change |
+| Fallback | A rule engine over the same options |
+| Planner (slow loop) | A **GitHub Copilot SDK** agent, with a model deployed in **Microsoft Foundry**, keyless **Microsoft Entra** auth, typed plans (Zod) |
+| Hosting | Azure Container Apps; the planner in-process, or as a Foundry hosted agent |
+| Observability | OpenTelemetry from the Copilot SDK → Azure Monitor / Application Insights; fast-loop metrics |
 
 ## What's in the skill
 
 | File | What it covers |
 | --- | --- |
-| [SKILL.md](skills/think-slow-act-fast/SKILL.md) | The steps, each with a "done when" check, rules for the agent running it, and a troubleshooting table |
+| [SKILL.md](skills/think-slow-act-fast/SKILL.md) | The stack and why, then the steps from the starter to your system, each with a "done when" check, and a troubleshooting table |
 | [concepts.md](skills/think-slow-act-fast/concepts.md) | The three layers, why it works, the arithmetic, where it fits and where it doesn't |
+| [decision-model.md](skills/think-slow-act-fast/decision-model.md) | The System One contract, Laya and Jev setup, writing questions that work, limits |
+| [planner.md](skills/think-slow-act-fast/planner.md) | The planner with the GitHub Copilot SDK on Foundry: setup, code, instructions, tools, telemetry, hosting, gotchas |
 | [lessons.md](skills/think-slow-act-fast/lessons.md) | What we learned: the fast loop, the slow loop, and making it visible to an audience |
 | [reference.md](skills/think-slow-act-fast/reference.md) | Interfaces, a real question and answer, the scheduler, the plan schema, the report, the metrics |
+| [starter/](starter/) | The runnable starter and its README |
 
 ## Use it
 
-Copy `skills/think-slow-act-fast/` into your agent's skills folder (for GitHub Copilot CLI,
-`~/.copilot/skills/`) and ask: *"Help me design a think-slow-act-fast system for ..."*. The skill tells the agent
-to check the fit with numbers first, build a rule baseline, and ask before creating anything in the cloud. You
-can also just read it.
+```bash
+git clone https://github.com/aiappsgbb/think-slow-act-fast && cd think-slow-act-fast/starter
+npm install && npm start            # runs on rules in seconds; see starter/README.md for Laya, Jev and Foundry
+```
 
-The pattern is model-neutral: use any decision model and any LLM that meet your latency, quality and price.
-Numbers were measured in October 2026.
+To give the skill to your coding agent, copy `skills/think-slow-act-fast/` into its skills folder (for GitHub Copilot
+CLI, `~/.copilot/skills/`) and ask: *"Help me build a think-slow-act-fast system for ..."*. The skill tells the agent
+to check the fit with numbers first, start from the starter, keep auth keyless, and ask before creating anything in
+Azure.
+
+Numbers were measured in October 2026 with `@github/copilot-sdk` 1.0.17, Laya and Jev.
 
 ## Contributing
 
