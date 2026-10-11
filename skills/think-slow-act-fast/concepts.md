@@ -39,19 +39,21 @@ The loop closes when the next report shows what the agents did under the new pla
 
 Do this for the user's case before building anything.
 
-| | Football demo |
+| | Microsoft Decision capacity planning |
 | --- | --- |
 | Agents | 22 (two teams of 11) |
-| Decisions per agent per second | about 3 (a request every 333 ms, plus event triggers) |
-| Decisions per second | about 50 to 66 |
-| Requests per second | about 6 (one per team per tick, all 11 questions together) |
-| Decision latency, measured | p50 about 235 ms, p95 about 285 ms |
-| LLM latency, measured | about 2 s per call |
-| LLM calls | about once a match minute per team |
-| Whole 90-minute match (about 6.6 real minutes) | about 21,000 decisions applied; $0.39 total ($0.23 decisions, $0.16 LLM) |
+| Target decisions per agent per second | 3; not guaranteed by the deployment |
+| Target decisions per second | 66 |
+| Required requests per second | 6 (one per team; batch all 11 questions), plus triggers |
+| Required quota | 360 RPM before triggers |
+| At 60 RPM | At most 1 request/s shared; about 2 seconds between requests per active group |
+| Decision latency and achieved throughput | Measure this deployment; separate model and fallback decisions |
+| LLM calls | About once a match minute per team, plus events and cooldown |
+| Decision cost | Input tokens × $0.042/million; output free; planner cost separate |
 
-At 2 s per call, an LLM per decision would let each agent act at most once every 2 seconds, six times less often
-than the demo, with 22 calls in flight at all times. That is the gap this pattern closes.
+For an illustrative LLM taking 2 seconds per call, sequential per-agent calls only allow one action every two
+seconds. Grouped decision inference closes that gap **only if quota and measured latency support it**.
+At low quota the system stays responsive through rules, not through fictitious model throughput.
 
 ## Where it fits
 

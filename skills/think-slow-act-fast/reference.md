@@ -24,7 +24,10 @@ interface Domain<W, C> {
   apply(w: W, d: Decision, how: { engine: string; fallback: boolean }): void;
   urgent?(w: W, group: string): { agentId: string; since: number }[];
 }
-new Scheduler(group, domain, engine /* SystemOneEngine */, fallback /* RuleEngine */, { intervalS: 1/3, maxInFlight: 2, deadlineS: 1, outageErrors: 3 });
+// Share this single budget across every scheduler using the same deployment.
+const requestBudget = new RequestBudget(60);
+new Scheduler(group, domain, engine /* SystemOneEngine */, fallback /* RuleEngine */,
+              { intervalS: 1/3, maxInFlight: 1, deadlineS: 1, outageErrors: 3, requestBudget });
 
 // planner.ts + copilot-planner.ts: the slow loop.
 new PlannerLoop(initialPlan, new CopilotPlanner({ planSchema, instructions, model, foundryEndpoint }),
@@ -32,11 +35,14 @@ new PlannerLoop(initialPlan, new CopilotPlanner({ planSchema, instructions, mode
 ```
 
 The football demo used the same shapes with one group per team, 11 agents per group.
+The attempt cadence is not the admitted Foundry rate: two groups at 3 requests/s require 360 RPM; a
+60 RPM budget admits at most one request/s total. See `decision-model.md` for the exact provider route,
+Entra scope and deployment-name body. Deadline fallback stays explicitly counted as rules.
 
-## One real question and answer
+## One football question and illustrative answer
 
-Captured during a recorded match (abbreviated to five of nine options). The decision model's own API shape will
-differ; the content is what matters.
+Domain wording from a recorded match, abbreviated to five options. The wrapper below is illustrative;
+it is not a measured Microsoft Decision result. See `decision-model.md` for the full warehouse contract.
 
 Shared state, sent once for the team:
 
@@ -68,11 +74,18 @@ The ball carrier's question:
 }
 ```
 
-Answer, 245 ms, for the whole team's request:
+For Foundry, send `{ "model": "decision-1", "state": <shared state>,
+"questions": { "p9": { "type": "choice", "instructions": <question without options>,
+"criteria": <options> } } }` to `/providers/microsoft/v1/systemone`.
+
+Illustrative answer for this agent:
 
 ```json
-{ "probabilities": { "dribble_forward": 0.44, "shoot": 0.43, "hold_up_ball": 0.10, "pass_to_#11": 0.02, "pass_to_#7": 0.01 },
-  "confidence": 0.37 }
+{ "model": "microsoft-decision-1",
+  "answers": { "p9": { "type": "choice", "choice": "dribble_forward",
+    "probabilities": { "dribble_forward": 0.44, "shoot": 0.43, "hold_up_ball": 0.10, "pass_to_#11": 0.02, "pass_to_#7": 0.01 },
+    "confidence": 0.37 } },
+  "usage": { "input_tokens": 200, "output_tokens": 0 } }
 ```
 
 Off-ball agents get the same shape with options like `press_carrier`, `mark_#7`, `cover_lane_to_#9`,
@@ -83,7 +96,8 @@ players are offered `press_carrier`).
 
 ```ts
 const INTERVAL_S = 1 / 3;          // cadence
-const MAX_IN_FLIGHT = 2;
+const MAX_IN_FLIGHT = 1;
+const requestBudget = new RequestBudget(60); // one shared instance for both groups, wall-clock RPM
 const CARRIER_FALLBACK_S = 1.0;    // delay-critical agent gets a rule decision after this
 const OUTAGE_ERRORS = 3;           // consecutive errors before rules drive the group
 
@@ -94,7 +108,10 @@ function tick(world) {
   const triggered = carrierChanged(world) || phaseChanged(world);
   const due = world.time - lastFire >= INTERVAL_S;
   if (!(due || triggered) || inFlight >= MAX_IN_FLIGHT) return;
-  fire(buildSnapshot(world));      // stamps snapshot.tick
+  const snap = buildSnapshot(world);
+  if (!snap.agents.length) { requestBudget.cancel(group); return; }
+  if (!requestBudget.tryAcquire(group)) return countQuotaDeferral();
+  fire(snap);                      // no queued old snapshots
 }
 
 function apply(world, snap, answer) {

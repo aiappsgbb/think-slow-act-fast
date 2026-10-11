@@ -26,9 +26,36 @@ export interface SchedulerOptions {
   deadlineS: number;
   /** Consecutive errors before the fallback drives the whole group. */
   outageErrors: number;
+  /** Shared by all groups using one deployment; triggers cannot bypass this wall-clock budget. */
+  requestBudget?: RequestBudget;
 }
 
 export const DEFAULTS: SchedulerOptions = { intervalS: 1 / 3, maxInFlight: 2, deadlineS: 1, outageErrors: 3 };
+
+/** Paced admission, no queued snapshots. Waiting groups take turns; errors still consume a slot. */
+export class RequestBudget {
+  private next = -Infinity;
+  private readonly waiting = new Set<string>();
+  private readonly intervalMs: number;
+
+  constructor(rpm: number, private readonly clock: () => number = () => performance.now()) {
+    if (!Number.isFinite(rpm) || rpm <= 0) throw new Error('Decision RPM must be positive and finite');
+    this.intervalMs = 60_000 / rpm;
+  }
+
+  tryAcquire(group: string): boolean {
+    this.waiting.add(group);
+    const now = this.clock();
+    if (now < this.next || this.waiting.values().next().value !== group) return false;
+    this.waiting.delete(group);
+    this.next = now + this.intervalMs;
+    return true;
+  }
+
+  cancel(group: string): void {
+    this.waiting.delete(group);
+  }
+}
 
 export class Metrics {
   requests = 0;
@@ -38,6 +65,7 @@ export class Metrics {
   invalid = 0;
   errors = 0;
   fallbacks = 0;
+  throttled = 0;
   inputTokens = 0;
   readonly latencies: number[] = [];
   lastError: string | null = null;
@@ -97,7 +125,14 @@ export class Scheduler<W, C> {
 
   private fire(w: W): void {
     const snap = this.domain.snapshot(w, this.group);
-    if (!snap.agents.length) return;
+    if (!snap.agents.length) {
+      this.o.requestBudget?.cancel(this.group);
+      return;
+    }
+    if (this.o.requestBudget && !this.o.requestBudget.tryAcquire(this.group)) {
+      this.metrics.throttled++;
+      return;
+    }
     this.metrics.requests++;
     this.inFlight++;
     const engine = this.engine;

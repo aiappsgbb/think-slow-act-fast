@@ -1,112 +1,137 @@
-# The decision model
+# Microsoft Decision on Foundry
 
-The fast loop needs a model that, given a situation and a list of options, returns a probability for every option,
-quickly, for many agents in one call. We build on the **System One** API because two interchangeable models speak it:
+The recommended fast loop is **Microsoft-Decision-1**, hosted in **Microsoft Foundry**.
+Code supplies valid options; the model returns a typed choice, confidence and probabilities.
+The starter uses native `fetch` and Microsoft Entra authentication; no third-party decision SDK or local model server.
 
-| | Laya | TypeSafe Jev |
-| --- | --- | --- |
-| Where | Your machine or container | Hosted API |
-| Licence / access | Open source, Apache-2.0 (`NandhaKishorM/laya`, weights `convaiinnovations/laya`) | API key from TypeSafe |
-| Endpoint | `http://127.0.0.1:8000/v1/systemone` (`laya-serve`) | `https://api.typesafe.ai/v1/systemone`, model `jev-latest` |
-| Speed we measured | ~25–60 ms for 1–3 questions on an Apple-silicon GPU; 90–300 ms for a group of 6 robots | p50 ~235 ms, p95 ~285 ms for a team of 11 (about 2,700 input tokens) |
-| Concurrency | One call at a time: `maxInFlight: 1` | `maxInFlight: 2` per group worked |
-| Cost | Free | Per input token (about $0.23 of decisions for a 90-minute football match, ~21,000 decisions) |
-| Best for | Development, demos, on-device, private data | Scale, no hardware, larger questions |
+## Deploy deliberately
 
-Both return the same shape, so switching is a base URL and a key. The starter's `SystemOneEngine` handles either.
-
-## Set up
-
-**Laya (local).** Python 3.10+:
+Ask before creating resources or deployments. Use an existing Foundry account and check its available quota.
+The catalog model is `Microsoft-Decision-1`, version `1`; use `decision-1` as the deployment name.
+Do **not** name the deployment `microsoft-decision-1`: it is a reserved name.
 
 ```bash
-python -m venv .venv && .venv/bin/python -m pip install "laya[serve]"
-LAYA_HOST=127.0.0.1 LAYA_MODELS=english .venv/bin/laya-serve      # listens on :8000; first start downloads weights
-curl -s localhost:8000/v1/systemone -H 'content-type: application/json' -d '{
-  "state": {"note": "billed twice"},
-  "questions": {"team": {"type": "choice", "instructions": "Which team?", "criteria": {"billing": "refunds", "tech": "bugs"}}}}'
+az login
+az cognitiveservices account deployment create \
+  --name <account> --resource-group <resource-group> \
+  --deployment-name decision-1 \
+  --model-name Microsoft-Decision-1 --model-format Microsoft --model-version 1 \
+  --sku-name DataZoneStandard --sku-capacity 60
 ```
 
-In Azure, run it as a sidecar container next to your app (the Laya repo documents a container image) and keep it
-on localhost.
+Capacity is literal **requests per minute**, not thousands of tokens or requests.
+EU Data Zone deployments are supported in West Europe; global deployments are supported in UK South.
+Check current regional availability, SKU and tenant quota before deploying; a tenant may only permit 60 RPM.
+Input costs **$0.042 per million tokens**; output is free. Confirm current pricing before incurring costs.
+Planner inference is billed separately.
 
-**Jev (hosted).** Put the key in the environment (Key Vault in Azure), never in code:
+## Connect keylessly
+
+Use the account endpoint, not a project URL, inference/chat route or deployment URL:
+
+- POST `https://<account>.services.ai.azure.com/providers/microsoft/v1/systemone`
+- Entra OAuth scope: `https://cognitiveservices.azure.com/.default`
+- Header: `Authorization: Bearer <access-token>`
+- Request body `model`: **your deployment name**, such as `decision-1`.
+
+Grant the calling identity the account's model-inference data-plane permissions (for example Cognitive Services User,
+subject to your account's RBAC policy). `DefaultAzureCredential` uses `az login` locally or managed identity in Azure.
+The planner's Azure OpenAI role and deployment are separate; see `planner.md`.
 
 ```bash
-export TYPESAFE_API_KEY=...
-DECISION_MODEL=jev npm start
+DECISION_MODEL=microsoft \
+DECISION_ENDPOINT=https://<account>.services.ai.azure.com \
+DECISION_DEPLOYMENT=decision-1 DECISION_RPM=60 npm start
 ```
 
-## The contract
+If keyless auth is unavailable, `DECISION_API_KEY` explicitly opts into the `api-key` header.
+Keep keys in environment/Key Vault, never in code or recordings.
 
-Request: one shared `state` and a map of questions. Ask every question about the same state in one call. (Values below
-are illustrative; `model` is for Jev; leave it out for Laya.)
+## Choice contract
+
+Shared `state` and `instructions` may be text or JSON. Each question has stable option keys.
+The example is illustrative, not a measured response.
 
 ```json
 {
-  "state": { "goal": "ship every order before it is due", "plan": "priority throughput; stay in your own zone" },
+  "model": "decision-1",
+  "state": { "goal": "ship orders before they are due", "plan": "help across zones when idle" },
   "questions": {
     "N3": {
       "type": "choice",
       "instructions": {
-        "you": "robot N3, a fast picker with a small battery",
-        "what_you_see": { "battery": "34%", "where": "north zone, 18 m from the pack station", "backlog": "9 open orders, 2 in your zone" },
-        "instruction_from_the_plan": "Take south-zone orders when idle for the next minute",
-        "question": "You are free. Following the plan, what do you do next?"
+        "you": "robot N3, a fast picker",
+        "what_you_see": { "battery": "above the charging threshold", "backlog": "two nearby orders" },
+        "instruction_from_the_plan": "Help the south zone when idle",
+        "question": "Following the plan, what do you do next?"
       },
       "criteria": {
-        "pick_order_17": "pick order 17: 6 m away, 3 items, due in 22 s",
-        "pick_order_21": "pick order 21: 19 m away, 1 item, due in 48 s, other zone",
-        "go_charge": "go and charge: battery 34%, charger 30 m away, 1 robot charging",
+        "pick_order_17": "pick order 17: nearest order, due soon",
+        "go_charge": "charge now: battery still above the threshold",
         "wait": "wait here for a better order"
       }
     }
-  },
-  "model": "jev-latest"
+  }
 }
 ```
 
-Response:
-
 ```json
-{ "answers": { "N3": { "type": "choice", "choice": "pick_order_17", "confidence": 0.41,
-                       "probabilities": { "pick_order_17": 0.58, "pick_order_21": 0.17, "go_charge": 0.21, "wait": 0.04 } } },
-  "usage": { "input_tokens": 412, "output_tokens": 0 } }
+{
+  "model": "microsoft-decision-1",
+  "answers": {
+    "N3": {
+      "type": "choice", "choice": "pick_order_17", "confidence": 0.8,
+      "probabilities": { "pick_order_17": 0.8, "go_charge": 0.15, "wait": 0.05 }
+    }
+  },
+  "usage": { "input_tokens": 200, "output_tokens": 0 }
+}
 ```
 
-Question types: `choice` (one of a set; the one you'll use most), `noul` (probability a statement is true, for
-guards like "is this agent stuck?") and `score` (position on an ordered rubric, e.g. urgency 0–3).
+The response model ID need not equal the deployment name. This starter implements `choice` only.
+It validates answer type, offered keys, confidence, probability range/normalization and usage.
+Missing or malformed answers, HTTP errors, timeout and network errors **throw**: they are not converted to
+success-shaped model decisions. Only an agent with exactly one valid option is resolved locally without inference.
+Rules are applied by the scheduler as explicitly counted fallback decisions.
 
-## Writing questions that work
+## Quota changes the cadence
 
-1. **Identity.** Role and style in a few words. Different identities make different, believable choices.
-2. **Seeing, in words.** Zones, distance bands, pressure, status. Not coordinates. "Below the charge level", not
-   "battery 18 < 20".
-3. **Options say why.** Each option text carries the facts that decide it: distance, due time, risk, side effects.
-   Same facts as numbers in `facts` for the rule engine and logs.
-4. **Filter in code.** Only valid options, only sensible ones, filtered by the current plan (the starter drops
-   other-zone orders when the plan says `own_zone_only`). Rank and keep the best 3–8.
-5. **Keep a stable key** per option (`pick_order_17`) that your executor understands. The scheduler rejects keys
-   that weren't offered.
-6. **Shuffle** option order every call (done in `SystemOneEngine`).
-7. **Shared state is short**: the goal, the plan in words, the time. Not the whole world.
-8. **Plan instructions are per agent**: the planner can single out up to two agents; their instruction goes only
-   into their question.
+Two groups at 3 requests/s each require **360 RPM**, before event triggers. A **60 RPM** deployment
+admits at most one request/s across both groups: approximately **2 seconds per group** when both are active.
+Question batching reduces requests, but does not turn a 60 RPM deployment into a 360 RPM deployment.
 
-## Limits to design around (Laya, checked)
+The warehouse shares one wall-clock `RequestBudget` across both schedulers, takes turns between waiting groups,
+caps in-flight calls at one per group and never queues old snapshots. Triggers cannot bypass the budget.
+The 1/3-second cadence is an application attempt cadence, **not** the achieved Foundry request rate.
+Urgent robots waiting one second get a rule **fallback**; three consecutive model failures enable group fallback.
+Expect fallback at low quota, even when Foundry is healthy. Admission deferrals, HTTP errors, model responses,
+model decisions, fallback decisions and p50 latency are reported separately. Deferrals count scheduling attempts,
+not HTTP 429s. A process-local budget cannot account for other apps sharing the deployment: reserve headroom or
+use a coordinated deployment-wide limiter. Errors consume admission slots; there are no hidden retries.
 
-- About **512 tokens per question including state**; longer state is cut from the end. Key facts first.
-- About **190 tokens for instructions plus all option texts**; longer ones are shortened. Keep to ~15 short options;
-  we use at most 8.
-- **English** for the English checkpoint (`LAYA_MODELS=english`). A multilingual checkpoint exists.
-- **No maths.** Comparing two numbers is a coin flip. Compare in code; say "closer than the other orders".
-- **Soft probabilities.** Correct answers often score 0.5–0.8. Gate on the gap between the top two when you need
-  certainty, and hand unclear cases to rules or the planner.
+Set `DECISION_RPM` no higher than your allocated share. Request more quota or combine compatible group state
+before claiming a higher model-only cadence. Measure p50/p95, stale rate and outcomes on the actual deployment;
+legacy local/third-party latency and cost figures are **not Microsoft Decision benchmarks**.
 
-## Using the answer
+## Write useful questions
 
-- **Sample** from the probabilities for variety; take `choice` (argmax) when you need determinism.
-- **Confidence** below ~0.5: hesitate briefly and visibly, or hand off.
-- **Freshness**: the world moved while you waited. The scheduler drops answers that are out of order or no longer
-  valid (`isFresh`); aim for under 10% stale.
-- **Never trust the key blindly**: the scheduler only applies keys that were offered; your executor validates again.
+1. Give each agent a concise identity and describe what it sees in words.
+2. Put the deciding facts in each option. Compute distances, comparisons, safety and odds in code.
+3. Filter invalid and pointless options in code; keep a compact shortlist (the starter uses eight).
+4. Send shared goals and the current plan once; per-agent instructions belong in that agent's question.
+5. Shuffle options (the engine does this) and keep stable executor keys.
+6. Sample probabilities for variety or set `sample: false` for argmax. Low confidence can trigger visible hesitation.
+7. Apply freshness checks after inference and validate again at execution time.
+
+The eight-option cap is application policy, not a published model token limit. Evaluate model accuracy and
+language support for your workload rather than importing limits from other models.
+
+## Microsoft-hosted is not a compliance certificate
+
+Microsoft post-trained this model from **Qwen3.5-9B**. Using Microsoft-hosted decision and planner deployments
+does not certify the application as “100% compliant.” Review model provenance, licenses, data boundaries,
+identity, networking, retention, telemetry and your organization's controls separately.
+
+Sources:
+- [Microsoft Learn: use Microsoft Decision](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision)
+- [Microsoft Decision 1 on Foundry](https://commandline.microsoft.com/microsoft-decision-1-model-foundry/)

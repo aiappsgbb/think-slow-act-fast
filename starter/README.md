@@ -1,81 +1,93 @@
 # Starter: think slow, act fast
 
-A small, complete system you can run in a minute and then make your own. Twelve warehouse robots in two zones pick
-orders and recharge. Every robot's next job is decided by a **decision model** several times a second; a **planner**
-(a GitHub Copilot SDK agent on a Microsoft Foundry model) sets the fleet's priorities, charging policy and zone rules;
-**code** owns the warehouse, the options and the safety rules.
+Twelve warehouse robots in two zones pick orders and recharge. **Microsoft-Decision-1 on Microsoft Foundry**
+chooses valid jobs; a **GitHub Copilot SDK planner on Foundry** sets priorities, charging policy and zone rules.
+Code owns the world, valid options, execution, freshness and safety. Rules remain the offline baseline and fallback.
 
 ```
-src/core/            the pattern, domain-free (reuse as-is)
-  types.ts           Option, AgentQuestion, Snapshot, Decision, DecisionEngine
-  systemone.ts       decision model over the System One API (Laya locally, TypeSafe Jev hosted)
-  rules.ts           rule engine: baseline, fallback, test oracle
-  scheduler.ts       fast loop: cadence + triggers, in-flight cap, freshness, fallbacks, metrics
-  planner.ts         slow loop: interval, event triggers, cooldown, never blocks
-  copilot-planner.ts planner backend: GitHub Copilot SDK + Foundry (keyless Entra), typed plan
+src/core/
+  types.ts           options, snapshots, decisions, engine interface
+  systemone.ts       Microsoft Decision REST transport, Entra auth, answer validation
+  rules.ts           seeded rules: baseline, fallback, test oracle
+  scheduler.ts       cadence, triggers, shared RequestBudget, freshness, fallbacks, metrics
+  planner.ts         slow loop: interval, triggers, cooldown, never blocks
+  copilot-planner.ts Copilot SDK + Foundry (Entra), typed plans
   rng.ts             seeded randomness
-src/warehouse/       the example domain (replace with yours)
-  world.ts           state, step(), execution, safety
-  domain.ts          questions, rule scores, freshness, report, plan schema, planner instructions
-  run.ts             headless runner with a live status line
-test/core.test.ts    scheduler and rule-engine tests
+src/warehouse/
+  world.ts           state, step, execution, hard safety
+  domain.ts          questions, rules, freshness, report, plan schema/instructions
+  run.ts             headless runner with live status
+test/                transport, scheduler, rules, configuration and reference tests
 ```
 
-## Run it
+## Run the baseline
 
-Node 20.19+ or 22.12+.
+Node 20.19+ or 22.12+:
 
 ```bash
 npm install
 npm test
-npm start                                        # rules only: no network, the baseline
+npm run typecheck
+npm start                 # rules only; no network
 ```
 
-Decision model, local (Laya, free) or hosted (Jev):
+## Microsoft Decision
+
+Follow [deployment and permissions](../skills/think-slow-act-fast/decision-model.md) before connecting.
+Use `az login` locally; managed identity in Azure. The decision deployment is **not** the planner deployment.
 
 ```bash
-pip install "laya[serve]" && LAYA_HOST=127.0.0.1 LAYA_MODELS=english laya-serve   # other terminal, port 8000
-DECISION_MODEL=laya npm start
-
-DECISION_MODEL=jev TYPESAFE_API_KEY=... npm start
+DECISION_MODEL=microsoft \
+DECISION_ENDPOINT=https://<account>.services.ai.azure.com \
+DECISION_DEPLOYMENT=decision-1 DECISION_RPM=60 npm start
 ```
 
-Planner on your Foundry deployment (you need Cognitive Services OpenAI User on the resource, and `az login`):
+Transport: POST `/providers/microsoft/v1/systemone` on the account host.
+Entra scope: `https://cognitiveservices.azure.com/.default`.
+Body `model` is the deployment name, not the catalog ID. `DECISION_API_KEY` optionally selects the `api-key`
+header instead of Entra. Never put keys in code, logs or videos.
+
+Two groups at 3 requests/s need **360 RPM** before triggers. At **60 RPM**, the shared wall-clock budget admits
+at most one request/s total, approximately two seconds per active group. Urgent robots get explicit rule fallback
+after one second. The runner keeps one request in flight per group and never queues old snapshots.
+Set `DECISION_RPM` no higher than your allocated deployment share; other apps may consume the same quota.
+The 1/3-second scheduler cadence does not guarantee a 3 Hz model rate.
+
+## Add the planner
+
+With a separately deployed planner model and the planner's Cognitive Services OpenAI User role:
 
 ```bash
-PLANNER=foundry FOUNDRY_ENDPOINT=https://<resource>.cognitiveservices.azure.com FOUNDRY_MODEL=<deployment> \
-DECISION_MODEL=laya npm start
+PLANNER=foundry \
+FOUNDRY_ENDPOINT=https://<resource>.cognitiveservices.azure.com FOUNDRY_MODEL=<planner-deployment> \
+DECISION_MODEL=microsoft \
+DECISION_ENDPOINT=https://<account>.services.ai.azure.com DECISION_DEPLOYMENT=decision-1 DECISION_RPM=60 \
+npm start
 ```
 
-Or on your GitHub Copilot models, for a quick try: `PLANNER=copilot COPILOT_MODEL=gpt-5 npm start`.
+The planner uses the Responses API, not the decision endpoint. Optional Copilot-prototyping path:
+`PLANNER=copilot COPILOT_MODEL=gpt-5 npm start`; use `PLANNER=foundry` for the Microsoft-hosted model path.
+Default planner is `off`; default decision engine is `rules`. Unknown decision providers fail explicitly.
+Options: `DURATION` (seconds, default 120), `SEED` (default 7).
 
-Options: `DURATION` (seconds, default 120), `SEED` (default 7), `LAYA_URL` (default `http://127.0.0.1:8000`).
+## What to observe
 
-## What you'll see
+From 40 to 100 seconds orders surge in the south. Under `own_zone_only`, the north can idle while the south backs
+up; the planner's report lets it consider `help_anywhere` and due-date priority. Keep this scenario when adapting.
 
-```
-t= 70s  open  5  done  11  late  0  | 28.0 dec/s  p50 84 ms  stale 3%  fallbacks 0  errors 0  | planner reviewing, 0 changes
-
-  PLAN CHANGE at 71 s (gpt-5.6-luna (Foundry)): North has 4 idle robots while south has 1 open order and 0 idle
-  robots, so allowing temporary cross-zone help should reduce the 26-second average wait without affecting the
-  0% late rate.
-  -> {"priority":"throughput","charge_below":20,"zones":"help_anywhere","instructions":[{"robot":"N2", ...}]}
-...
-Done in 121 s: 16 orders shipped, 0 late, 8 open, 0 forced recharges. 2455 decisions applied (20.3/s),
-planner: 7 reviews, 2 changes.
-```
-
-From 40 s to 100 s orders surge in the south zone. On `own_zone_only` the south gets busy while the north idles;
-the planner notices from the report and lets robots help across zones, then moves to due-date priority when an order
-goes overdue. (Laya locally, Foundry `gpt-5.6-luna` planner, seed 7.)
+The status line reports open/done/late orders, **model or rule** decisions/s, measured p50 (`n/a` without inference),
+stale %, fallback decisions, errors, requests, validated responses, quota-deferred scheduling attempts and input cost.
+Malformed/missing answers, HTTP errors and network failures propagate to the scheduler, never masquerade as
+successful model decisions. No hidden retries. Tokens cost $0.042/million input; output is free; planner billed separately.
+No previous provider's latency or outcome numbers are presented as Microsoft Decision results.
 
 ## Make it yours
 
-1. Copy `src/warehouse/` to `src/<your-domain>/`.
-2. `world.ts`: your state, a fixed-step `step(dt)`, execution with its odds, hard safety rules.
-3. `domain.ts`: implement `Domain` (snapshot, triggerKey, isFresh, apply, urgent), a `ruleScore`, your `PlanSchema`,
-   the planner instructions and `report()`.
-4. `run.ts`: one `Scheduler` per group, one `PlannerLoop`, your event triggers.
-5. Run on rules, then a decision model, then the planner. Keep `npm test` green.
+1. Replace `src/warehouse/`: state, fixed-step execution and hard safety in `world.ts`.
+2. Implement `Domain`: snapshot, triggerKey, isFresh, apply, urgent; rule scores and typed plan/report in `domain.ts`.
+3. Keep one scheduler per group, **one shared RequestBudget per decision deployment**, and the planner loop.
+4. Run rules, then Microsoft Decision, then Foundry planner. Evaluate the same seeds and keep tests green.
+5. Review model provenance (Microsoft post-trained from Qwen3.5-9B), licensing and organizational controls:
+   Microsoft hosting is not a compliance certificate.
 
-The skill in `../skills/think-slow-act-fast/` walks through each step and what "done" looks like.
+The [skill](../skills/think-slow-act-fast/SKILL.md) walks through the full pattern.

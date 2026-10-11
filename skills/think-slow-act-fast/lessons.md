@@ -1,12 +1,13 @@
 # Lessons
 
 What we learned building a live 11 v 11 football match on this pattern: 22 players decided by a decision model,
-an LLM manager per team, everything visible on screen. Numbers are from a full recorded 90-minute match.
+an LLM manager per team, everything visible on screen. Any recorded match numbers below are **historical,
+from the earlier providers**, not Microsoft Decision measurements. Re-measure on the Foundry deployment.
 
 ## The fast loop
 
 1. **One request per group, not per agent.** Shared state goes in once; each agent adds one short question. A
-   team of 11 cost about 2,700 input tokens per request and answered in about 235 ms (p50).
+   team of 11 shares goals and the plan once. Measure the actual tokens and latency on Microsoft Decision.
 2. **Code computes the options and filters them by context.** Our first probe offered "press the carrier" while
    our own team had the ball. The model picked it. Never offer an option code knows is invalid.
 3. **Describe in words, not coordinates.** "In the attacking third, right wing; an opponent is closing you down"
@@ -15,8 +16,8 @@ an LLM manager per team, everything visible on screen. Numbers are from a full r
 4. **Give each agent an identity.** Role and playing style ("a dribbler who loves taking players on") made
    choices differ by character, and made the result watchable.
 5. **Shuffle options** to counter first-option bias.
-6. **Timer plus triggers.** A 333 ms cadence alone made the ball carrier wait. Firing immediately on possession
-   change, pass received and restarts fixed it.
+6. **Timer plus triggers, inside quota.** Possession changes, pass received and restarts should request a fresh
+   snapshot promptly, but never bypass the shared wall-clock budget. Two groups at 3 requests/s need 360 RPM.
 7. **Freshness checks are not optional.** Answers arrive after the world has moved. Drop an on-ball answer if
    the agent no longer has the ball, and an off-ball answer if the team's phase changed. We dropped about 5%.
 8. **Speculate where you can.** While a pass is in flight, ask the receiver what he'll do when it arrives.
@@ -24,8 +25,8 @@ an LLM manager per team, everything visible on screen. Numbers are from a full r
 9. **Sample, and show hesitation.** Sampling from the odds gave variety without randomness. Confidence below 0.5
    delayed the action by up to a fraction of a second, visibly.
 10. **Fallbacks earn their keep in demos.** A carrier with no fresh decision after 1 s gets a rule decision;
-    three errors in a row and rules drive the team until the model answers. In the recorded match: 0 fallbacks,
-    0 errors, but the presenter can trust it.
+    three errors in a row and rules drive the team until the model answers. At 60 RPM, urgent fallback is expected
+    even when Foundry is healthy. Show it as rules, not as successful inference.
 11. **Execution odds live in code, seeded.** The model decides to shoot; code decides whether it goes in. Keeps
     the model honest and the physics consistent.
 
@@ -57,10 +58,12 @@ The demo only lands if people can see both speeds working.
    pulsing players say "constant decisions" better than any feed of text.
 3. **Show the LLM thinking.** A small "reviewing" status per manager, and a card when it changes the plan: the
    reason in one sentence and the changes as chips.
-4. **Live numbers:** decisions per second, median decision time, cost so far.
+4. **Live numbers:** model decisions per second, median inference time, fallback decisions, quota deferrals,
+   errors and cost so far. Never reuse historical numbers in a new model recording.
 5. **Pace and camera.** At full speed nobody could follow it. 0.8× speed, a camera that follows the ball and
    zooms in, and full-screen moments for goals with a slow replay made it watchable.
-6. **Label the layers in plain words.** "Decision model" and "LLM manager", not product names.
+6. **Label the layers plainly and identify the backend.** "Microsoft Decision (Foundry)" and "LLM manager";
+   visibly distinguish "rules fallback". Microsoft hosting is not a compliance certification.
 
 ## Building the starter (warehouse)
 
@@ -70,8 +73,8 @@ The demo only lands if people can see both speeds working.
    starter reserves the order in `apply`, before the robot moves.
 3. **Hard safety stays in code.** A robot below 8% battery goes to charge regardless of the model or the plan.
    The models choose within a safe space; they never own the safety rule.
-4. **Laya is one-at-a-time.** With `maxInFlight: 1` and six robots per request, Laya answered in 90–300 ms on a
-   laptop GPU with no errors; more in flight only queued.
+4. **Admission precedes inference.** The Microsoft Decision starter starts at one in-flight call per group and
+   shares one paced `RequestBudget`. Waiting groups take turns; do not queue stale snapshots or hidden retries.
 5. **A fresh Copilot SDK session per review** kept the planner cheap and predictable; the report and the "last
    change" line in the prompt are its memory.
 6. **Structured output differs by provider.** Foundry's Responses API took our schema as is; another provider

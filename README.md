@@ -5,12 +5,12 @@ honest.**
 
 An LLM takes seconds per call. A football match, a warehouse or a contact centre needs dozens of decisions a
 second. So the LLM thinks slowly about the plan, about once a minute, and explains why. A decision model makes
-every in-the-moment choice in a few hundred milliseconds, picking only from options code has checked. Code owns
+in-the-moment choices from options code has checked, within the deployment's measured latency and quota. Code owns
 the facts, the rules and the physics, and reports back to the LLM.
 
-We built it into a live 11 v 11 football match: 22 players deciding about three times a second each, an LLM
-manager per team changing the tactics, around 50 decisions a second, a median decision in about 235 ms, and a
-whole 90-minute match for under 40 cents.
+The architecture originated in a live 11 v 11 football match and carries over to the warehouse starter.
+The recommended decision model is now **Microsoft-Decision-1 on Microsoft Foundry**. Previous demo throughput,
+latency and cost measurements are not benchmarks for this model.
 
 This repo has two parts:
 
@@ -25,7 +25,7 @@ The pattern is model-agnostic; the starter is opinionated.
 
 | Layer | Default |
 | --- | --- |
-| Decision model (fast loop) | The **System One** API: **Laya** locally (open source, Apache-2.0) or **TypeSafe Jev** hosted. Same wire protocol, one config change |
+| Decision model (fast loop) | **Microsoft-Decision-1 on Microsoft Foundry**, provider System One REST route, keyless Microsoft Entra auth |
 | Fallback | A rule engine over the same options |
 | Planner (slow loop) | A **GitHub Copilot SDK** agent, with a model deployed in **Microsoft Foundry**, keyless **Microsoft Entra** auth, typed plans (Zod) |
 | Hosting | Azure Container Apps; the planner in-process, or as a Foundry hosted agent |
@@ -37,7 +37,7 @@ The pattern is model-agnostic; the starter is opinionated.
 | --- | --- |
 | [SKILL.md](skills/think-slow-act-fast/SKILL.md) | The stack and why, then the steps from the starter to your system, each with a "done when" check, and a troubleshooting table |
 | [concepts.md](skills/think-slow-act-fast/concepts.md) | The three layers, why it works, the arithmetic, where it fits and where it doesn't |
-| [decision-model.md](skills/think-slow-act-fast/decision-model.md) | The System One contract, Laya and Jev setup, writing questions that work, limits |
+| [decision-model.md](skills/think-slow-act-fast/decision-model.md) | Microsoft Decision deployment, exact REST contract, Entra auth, quota, question design |
 | [planner.md](skills/think-slow-act-fast/planner.md) | The planner with the GitHub Copilot SDK on Foundry: setup, code, instructions, tools, telemetry, hosting, gotchas |
 | [lessons.md](skills/think-slow-act-fast/lessons.md) | What we learned: the fast loop, the slow loop, and making it visible to an audience |
 | [reference.md](skills/think-slow-act-fast/reference.md) | Interfaces, a real question and answer, the scheduler, the plan schema, the report, the metrics |
@@ -47,7 +47,7 @@ The pattern is model-agnostic; the starter is opinionated.
 
 ```bash
 git clone https://github.com/aiappsgbb/think-slow-act-fast && cd think-slow-act-fast/starter
-npm install && npm start            # runs on rules in seconds; see starter/README.md for Laya, Jev and Foundry
+npm install && npm start            # rules baseline; see starter/README.md for Microsoft Foundry
 ```
 
 To give the skill to your coding agent, copy `skills/think-slow-act-fast/` into its skills folder (for GitHub Copilot
@@ -55,7 +55,20 @@ CLI, `~/.copilot/skills/`) and ask: *"Help me build a think-slow-act-fast system
 to check the fit with numbers first, start from the starter, keep auth keyless, and ask before creating anything in
 Azure.
 
-Numbers were measured in October 2026 with `@github/copilot-sdk` 1.0.17, Laya and Jev.
+## Foundry capacity and governance
+
+Decision calls use `POST https://<account>.services.ai.azure.com/providers/microsoft/v1/systemone`;
+body `model` is the deployment name (for example `decision-1`). Entra scope:
+`https://cognitiveservices.azure.com/.default`. See the [setup guide](skills/think-slow-act-fast/decision-model.md).
+
+Two groups at 3 requests/s need **360 RPM**, before triggers. At **60 RPM**, the starter admits at most one
+request/s across both zones and counts urgent rule fallbacks separately. It shares a paced wall-clock budget;
+`DECISION_RPM` must reflect your allocated share. Model responses, errors and quota deferrals are not interchangeable.
+Input price is $0.042/million tokens; output is free. Validate current price and tenant quota before deployment.
+
+The Microsoft-hosted fast loop replaces the earlier local/third-party recommendation, without changing the
+warehouse or planner architecture. Microsoft post-trained the model from Qwen3.5-9B; this is not an application
+compliance certification. Review provenance, licenses, data boundaries and organizational controls independently.
 
 ## Contributing
 

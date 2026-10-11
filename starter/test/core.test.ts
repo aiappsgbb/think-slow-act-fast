@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng.js';
 import { RuleEngine } from '../src/core/rules.js';
-import { DEFAULTS, Scheduler, type Domain } from '../src/core/scheduler.js';
+import { DEFAULTS, RequestBudget, Scheduler, type Domain } from '../src/core/scheduler.js';
 import type { Decision, DecisionEngine, EngineResult, Snapshot } from '../src/core/types.js';
 
 /** A tiny world: one agent, a "ball" that can move to another agent, a clock. */
@@ -38,6 +38,42 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const toy = (): Toy => ({ t: 0, tick: 0, holder: 'p1', applied: [], urgentSince: null });
 
 describe('Scheduler', () => {
+  it('shares a 60RPM wall-clock budget fairly across groups even with triggers', async () => {
+    const w = toy();
+    const e = new ManualEngine();
+    let milliseconds = 0;
+    const budget = new RequestBudget(60, () => milliseconds);
+    const schedulers = ['north', 'south'].map((g) => new Scheduler(g, domain, e, rules, { ...DEFAULTS, requestBudget: budget }));
+    for (let i = 0; i < 600; i++) {
+      milliseconds = i * 100;
+      w.t = i / 10;
+      w.tick = i;
+      w.holder = `holder-${i}`;
+      for (const s of schedulers) s.tick(w);
+      for (const p of e.pending) p.resolve({ decisions: [], inputTokens: 100, latencyMs: 1, engine: e.name });
+      await flush();
+    }
+    expect(e.pending).toHaveLength(60);
+    expect(e.pending.filter((p) => p.s.group === 'north')).toHaveLength(30);
+    expect(e.pending.filter((p) => p.s.group === 'south')).toHaveLength(30);
+    expect(schedulers.reduce((n, s) => n + s.metrics.throttled, 0)).toBeGreaterThan(0);
+  });
+
+  it('does not consume the budget for empty snapshots', () => {
+    const w = toy();
+    const e = new ManualEngine();
+    const budget = new RequestBudget(60, () => 0);
+    const empty = { ...domain, snapshot: (w: Toy, g: string) => ({ ...domain.snapshot(w, g), agents: [] }) };
+    new Scheduler('empty', empty, e, rules, { ...DEFAULTS, requestBudget: budget }).tick(w);
+    new Scheduler('active', domain, e, rules, { ...DEFAULTS, requestBudget: budget }).tick(w);
+    expect(e.pending).toHaveLength(1);
+  });
+
+  it('rejects invalid RPM configuration', () => {
+    expect(() => new RequestBudget(0)).toThrow();
+    expect(() => new RequestBudget(NaN)).toThrow();
+  });
+
   it('applies a fresh answer and records latency and tokens', async () => {
     const w = toy();
     const e = new ManualEngine();

@@ -2,8 +2,7 @@
  * Run the warehouse example headless.
  *
  *   npm start                                   # rules only, no network: the baseline
- *   DECISION_MODEL=laya npm start               # local decision model (laya-serve, default http://127.0.0.1:8000; LAYA_URL to change)
- *   DECISION_MODEL=jev TYPESAFE_API_KEY=... npm start
+ *   DECISION_MODEL=microsoft DECISION_ENDPOINT=https://<account>.services.ai.azure.com DECISION_DEPLOYMENT=decision-1 npm start
  *   PLANNER=foundry FOUNDRY_ENDPOINT=https://<resource>.cognitiveservices.azure.com FOUNDRY_MODEL=<deployment> npm start
  *   PLANNER=copilot npm start                   # planner on the signed-in GitHub Copilot user's models
  *
@@ -13,7 +12,7 @@ import { CopilotPlanner } from '../core/copilot-planner.js';
 import { PlannerLoop, type PlannerBackend } from '../core/planner.js';
 import { Rng } from '../core/rng.js';
 import { RuleEngine } from '../core/rules.js';
-import { DEFAULTS, Scheduler } from '../core/scheduler.js';
+import { DEFAULTS, RequestBudget, Scheduler } from '../core/scheduler.js';
 import { SystemOneEngine } from '../core/systemone.js';
 import type { DecisionEngine } from '../core/types.js';
 import { clampPlan, PLANNER_INSTRUCTIONS, PlanSchema, report, ruleScore, warehouseDomain } from './domain.js';
@@ -27,18 +26,21 @@ const DT = 0.1;
 const world = newWorld(new Rng(SEED));
 const rules = new RuleEngine(ruleScore, new Rng(SEED + 1));
 
-function decisionModel(): { engine: DecisionEngine; maxInFlight: number; price: number } {
+function decisionModel(): { engine: DecisionEngine; maxInFlight: number; price: number; requestBudget?: RequestBudget } {
   const which = env.DECISION_MODEL ?? 'rules';
-  if (which === 'laya') {
-    const e = new SystemOneEngine({ baseUrl: env.LAYA_URL ?? 'http://127.0.0.1:8000', maxOptions: 8, timeoutMs: 1000 }, new Rng(SEED + 2));
-    return { engine: e, maxInFlight: 1, price: 0 }; // Laya answers one call at a time.
+  if (which === 'microsoft') {
+    if (!(env.DECISION_ENDPOINT && env.DECISION_DEPLOYMENT)) throw new Error('DECISION_MODEL=microsoft needs DECISION_ENDPOINT and DECISION_DEPLOYMENT');
+    const requestBudget = new RequestBudget(Number(env.DECISION_RPM ?? 60));
+    const e = new SystemOneEngine({
+      baseUrl: env.DECISION_ENDPOINT,
+      model: env.DECISION_DEPLOYMENT,
+      apiKey: env.DECISION_API_KEY,
+      maxOptions: 8,
+      timeoutMs: 5000,
+    }, new Rng(SEED + 2));
+    return { engine: e, maxInFlight: 1, price: e.pricePerInputToken, requestBudget };
   }
-  if (which === 'jev') {
-    if (!env.TYPESAFE_API_KEY) throw new Error('DECISION_MODEL=jev needs TYPESAFE_API_KEY');
-    const price = 0.042 / 1_000_000;
-    const e = new SystemOneEngine({ baseUrl: 'https://api.typesafe.ai', apiKey: env.TYPESAFE_API_KEY, model: 'jev-latest', pricePerInputToken: price }, new Rng(SEED + 2));
-    return { engine: e, maxInFlight: 2, price };
-  }
+  if (which !== 'rules') throw new Error(`Unsupported DECISION_MODEL: ${which}; use rules or microsoft`);
   return { engine: rules, maxInFlight: 2, price: 0 };
 }
 
@@ -56,7 +58,7 @@ function plannerBackend(): (PlannerBackend<Plan> & { stop?: () => Promise<void> 
 
 const dm = decisionModel();
 const schedulers = (['north', 'south'] as const).map(
-  (zone) => new Scheduler(zone, warehouseDomain, dm.engine, rules, { ...DEFAULTS, maxInFlight: dm.maxInFlight }),
+  (zone) => new Scheduler(zone, warehouseDomain, dm.engine, rules, { ...DEFAULTS, maxInFlight: dm.maxInFlight, requestBudget: dm.requestBudget }),
 );
 const backend = plannerBackend();
 let windowStart = 0;
@@ -74,6 +76,7 @@ const planner = new PlannerLoop<Plan>(
 );
 
 console.log(`decision model: ${dm.engine.name} · planner: ${backend?.name ?? 'off'} · ${world.robots.length} robots · ${DURATION} s\n`);
+if (dm.requestBudget) console.log(`Foundry budget: ${env.DECISION_RPM ?? 60} RPM shared across both zones; urgent deadline decisions use rules and are counted as fallbacks.\n`);
 let lastLine = 0;
 let overdueAlarm = false;
 const startedAt = performance.now();
@@ -97,10 +100,14 @@ const timer = setInterval(() => {
     const stale = m.reduce((a, x) => a + x.stale, 0);
     const fb = m.reduce((a, x) => a + x.fallbacks, 0);
     const errs = m.reduce((a, x) => a + x.errors, 0);
+    const throttled = m.reduce((a, x) => a + x.throttled, 0);
+    const requests = m.reduce((a, x) => a + x.requests, 0);
+    const responses = m.reduce((a, x) => a + x.responses, 0);
     const cost = m.reduce((a, x) => a + x.inputTokens, 0) * dm.price;
     console.log(
       `t=${world.t.toFixed(0).padStart(3)}s  open ${String(openOrders(world).length).padStart(2)}  done ${String(world.stats.completed).padStart(3)}  late ${String(world.stats.late).padStart(2)}` +
-        `  | ${((applied - applied0) / 5).toFixed(1)} dec/s  p50 ${p50} ms  stale ${applied + stale ? Math.round((100 * stale) / (applied + stale)) : 0}%  fallbacks ${fb}  errors ${errs}` +
+        `  | ${((applied - applied0) / 5).toFixed(1)} ${dm.engine === rules ? 'rule' : 'model'} dec/s  p50 ${lat.length ? `${p50} ms` : 'n/a'}  stale ${applied + stale ? Math.round((100 * stale) / (applied + stale)) : 0}%  fallbacks ${fb}  errors ${errs}` +
+        `  requests ${requests} responses ${responses} quota-deferred ${throttled}` +
         `  | planner ${planner.state.status}, ${planner.state.changes} changes  | $${cost.toFixed(4)}`,
     );
     applied0 = applied;
