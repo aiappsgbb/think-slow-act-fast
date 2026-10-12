@@ -1,0 +1,68 @@
+<!doctype html>
+<!--
+THESIS: Hear one call take two paths; the useful difference is an earlier permitted acknowledgement.
+OWN-WORLD: The original demo's navy, white and decision-yellow become a contact-centre call sheet.
+STORY: Play the usual path, replay early handoff, inspect measured evidence, follow the unchanged skill URL.
+FIRST VIEWPORT: Call/transcript at left, measured route timeline at right, direct playback controls below.
+FORM: User-approved sequential comparison, not a benchmark dashboard; one audible source at a time.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Early handoff · Think slow, act fast</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="https://aka.ms/think-slow-act-fast">Think slow, act fast<span>.</span></a>
+    <span class="disclosure">This is a recorded synthetic call. The transfer is simulated.</span>
+  </header>
+  <main>
+    <section class="opening">
+      <h1>Microsoft Decision One helps the assistant prepare a handoff while the caller is still speaking.</h1>
+      <p>The agent then waits for a pause before offering to connect the caller to an adviser.</p>
+    </section>
+    <section class="call-sheet" aria-label="Recorded call comparison">
+      <div class="conversation">
+        <div class="call-heading"><h2>Password reset</h2><span id="clock">00:00.0</span></div>
+        <div class="speaker-line"><span class="speaker-dot"></span><span id="speaker">Caller recording ready</span></div>
+        <canvas id="waveform" width="900" height="100" aria-label="Original caller audio waveform"></canvas>
+        <p id="transcript" aria-live="off">“After three failed password resets…”</p>
+        <div id="acknowledgement" hidden>“I'm connecting you to a human adviser now.”<span>Approved cached audio · Transfer simulated</span></div>
+      </div>
+      <div class="routing">
+        <div class="mode-heading"><h2 id="mode-title">The usual turn-based path</h2><span id="record-id">H005</span></div>
+        <ol id="steps">
+          <li data-step="listen"><span class="step-mark"></span><div><strong>Listen to the caller</strong><p id="listen-detail">Wait for the actual end of the turn.</p></div></li>
+          <li data-step="route"><span class="step-mark"></span><div><strong id="route-title">Generate the final reply</strong><p id="route-detail">GPT-6 Luna runs after speech completes.</p></div></li>
+          <li data-step="pause" id="pause-step" hidden><span class="step-mark"></span><div><strong>Give the caller a moment</strong><p>Speak at a short natural pause, not over their words.</p></div></li>
+          <li data-step="ack"><span class="step-mark"></span><div><strong>Acknowledge the caller</strong><p>The agent uses the same approved message in both versions.</p></div></li>
+        </ol>
+        <div id="route-proof" hidden><span>The request meets the handoff conditions.</span><strong id="probabilities"></strong></div>
+        <p id="generation">Final LLM call: waits for turn end</p>
+        <p id="comparison" aria-live="polite">Play the turn-based version first.</p>
+      </div>
+    </section>
+    <div class="playback">
+      <button id="play-standard" disabled>Play turn-based version</button>
+      <button id="play-early" disabled>Play early handoff</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="results" disabled>See measured results</button>
+      <span id="status" role="status">Loading the recording…</span>
+    </div>
+    <section id="evidence" hidden>
+      <h2>The agent responds sooner without waiting for a generated reply.</h2>
+      <div class="evidence-line"><strong>281 ms</strong><span>This is the median time from the accepted transcript to ready audio.<br>The 95th percentile was 417 ms across 21 early handoffs.</span></div>
+      <div id="control-proof"><strong>This control call continued without a handoff.</strong><p id="control-quote"></p><span>In control H014, the assistant continued the conversation and made the normal final LLM call.</span></div>
+      <p>The early path handled 21 of 25 escalation cases without starting the final LLM call. All 25 control cases continued without a false handoff.<br>Monitoring added about $0.000076 in estimated inference cost per turn. These figures come from a 50-call synthetic regression test.</p>
+      <a href="https://aka.ms/think-slow-act-fast">Build the pattern<span>aka.ms/think-slow-act-fast</span></a>
+      <button id="back">Back to the call replay</button>
+    </section>
+    <p id="error" role="alert" hidden></p>
+    <details id="method"><summary>What is real in this replay?</summary><p>The voice is fictional. The transcript updates, decision answers and response timings come from an instrumented Azure Speech / Microsoft-Decision-1 / GPT-6 Luna capture. This page replays them locally; it does not call a model or connect an adviser. Audio-ready is not adviser pickup. The side-effect gate is tested separately in <code>core.test.mjs</code>.</p><p><a href="narrated-draft-v2.mp4">Watch the narrated 87-second draft</a>. It explains the confidence checks, plays both paths, and stages an immediate courteous interruption at the recorded qualifying decision, followed by the proposed integration architecture. The transfer is simulated, the new interruption timing is not a playback benchmark, and auditory review remains pending.</p><p>See <a href="README.md">the example notes</a> and <a href="../../skills/think-slow-act-fast/early-handoff.md">the implementation guide</a>.</p></details>
+  </main>
+  <div id="caption" aria-live="off"></div>
+  <script type="module" src="app.mjs"></script>
+</body>
+</html>

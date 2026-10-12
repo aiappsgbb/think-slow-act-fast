@@ -12,12 +12,19 @@ The architecture originated in a live 11 v 11 football match and carries over to
 The recommended decision model is now **Microsoft-Decision-1 on Microsoft Foundry**. Previous demo throughput,
 latency and cost measurements are not benchmarks for this model.
 
-This repo has two parts:
+This repo contains:
 
 - **A skill** your coding agent can follow, from "is this the right pattern?" to a working system, with the lessons
   from building it.
 - **A runnable starter** (`starter/`): a warehouse of 12 robots where a decision model picks every robot's next job
   and a planner changes the fleet's plan when a surge hits. Copy it and replace the warehouse with your domain.
+- **A second demonstration** ([early human handoff](examples/early-handoff/)): hear a recorded synthetic
+  call through the normal turn-based path, then replay it with Microsoft-Decision-1 acting on partial speech.
+  The browser example runs offline and simulates the transfer; the linked guide explains how to build it.
+
+For a permitted early handoff, code can play an approved acknowledgement and skip the final LLM call.
+This voice variant does not require a slow planner. It shows how code can prepare a permitted handoff
+without waiting for a generated reply. The guide includes the measured latency, cost and false-handoff results.
 
 ## The stack we recommend
 
@@ -41,7 +48,9 @@ The pattern is model-agnostic; the starter is opinionated.
 | [planner.md](skills/think-slow-act-fast/planner.md) | The planner with the GitHub Copilot SDK on Foundry: setup, code, instructions, tools, telemetry, hosting, gotchas |
 | [lessons.md](skills/think-slow-act-fast/lessons.md) | What we learned: the fast loop, the slow loop, and making it visible to an audience |
 | [reference.md](skills/think-slow-act-fast/reference.md) | Interfaces, a real question and answer, the scheduler, the plan schema, the report, the metrics |
+| [early-handoff.md](skills/think-slow-act-fast/early-handoff.md) | The second demo: partial speech, human escalation, skipped generation, latency clocks, cost and adverse evidence |
 | [starter/](starter/) | The runnable starter and its README |
+| [examples/early-handoff/](examples/early-handoff/) | Credential-free recorded call replay and tested execution/audio helpers |
 
 ## Use it
 
@@ -54,6 +63,10 @@ To give the skill to your coding agent, copy `skills/think-slow-act-fast/` into 
 CLI, `~/.copilot/skills/`) and ask: *"Help me build a think-slow-act-fast system for ..."*. The skill tells the agent
 to check the fit with numbers first, start from the starter, keep auth keyless, and ask before creating anything in
 Azure.
+
+To run the second demo, from this repository's root run
+`python3 -m http.server 8080 --bind 127.0.0.1`, then open
+<http://localhost:8080/examples/early-handoff/>. The skill link remains <https://aka.ms/think-slow-act-fast>.
 
 ## Foundry capacity and governance
 

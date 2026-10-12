@@ -1,0 +1,105 @@
+<!doctype html>
+<!-- This focused view presents real recorded events from D001 and D002. The baseline excerpt is marked as an earlier take; D002 is a scripted synthetic barge-in with actual native inference and a simulated transfer. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Narrated early handoff</title>
+  <style>
+    /* Inherit the call console's face; 54/700 titles, 35/650 states and 24/400 details provide the hierarchy. */
+    :root { color:#0b1222; background:#f4f6fb; font-family:"Avenir Next","Segoe UI",sans-serif; }
+    * { box-sizing:border-box; }
+    body { margin:0; }
+    header { margin:0 80px; height:90px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #cdd3df; }
+    header strong { font-size:27px; } header span { font-size:17px; color:#596473; }
+    main { margin:45px 110px 0; }
+    h1 { font-size:54px; line-height:1.12; letter-spacing:-.025em; font-weight:700; margin:0 0 30px; max-width:31ch; }
+    #edit { color:#596473; font-size:21px; height:32px; margin:0 0 14px; }
+    .call { border:1px solid #cdd3df; background:#fff; padding:30px 36px; min-height:380px; }
+    .speaker { display:flex; align-items:center; justify-content:space-between; font-size:23px; }
+    #clock { font-variant-numeric:tabular-nums; }
+    canvas { display:block; width:100%; height:90px; margin:26px 0; }
+    #state { font-size:35px; font-weight:650; margin:12px 0; }
+    #detail { font-size:24px; color:#596473; margin:10px 0; }
+    #reply { margin:22px 0 0; padding:18px 24px; background:#ffe066; font-size:31px; line-height:1.35; }
+    #caption { position:fixed; bottom:35px; left:120px; right:120px; font-size:31px; line-height:1.4; text-align:center; min-height:96px; }
+    #link { font-size:65px; font-weight:650; letter-spacing:-.025em; margin:35px 0; }
+    #source { font-size:16px; color:#596473; margin-top:20px; }
+    [hidden] { display:none !important; }
+    body.closing .call,body.closing #edit { display:none; }
+    body.closing h1 { margin-top:90px; max-width:26ch; }
+    a { color:inherit; }
+    #watch { font-size:18px; }
+    body.film #watch { display:none; }
+  </style>
+</head>
+<body>
+  <header><strong>Think slow, act fast.</strong><span>This is a scripted synthetic call. The transfer is simulated.</span></header>
+  <main>
+    <h1 id="title">The assistant can prepare a handoff while the caller speaks.</h1>
+    <p id="edit"></p>
+    <section class="call">
+      <div class="speaker"><span id="speaker">Recorded call</span><span id="clock">00:00.0</span></div>
+      <canvas id="wave" width="1600" height="100"></canvas>
+      <p id="state"></p>
+      <p id="detail"></p>
+      <p id="reply" hidden></p>
+    </section>
+    <a id="link" href="https://aka.ms/think-slow-act-fast" hidden>aka.ms/think-slow-act-fast</a>
+    <p id="source"></p>
+    <a id="watch" href="narrated-draft.mp4">Watch the narrated draft</a>
+  </main>
+  <div id="caption"></div>
+  <script type="module">
+    const $=id=>document.getElementById(id);
+    const load=async path=>{const r=await fetch(path);if(!r.ok)throw new Error(`${path}: HTTP${r.status}`);return r.json();};
+    const [baseline,barge]=await Promise.all([load('recording.json'),load('barge-recording.json')]);
+    const draw=(data,time)=>{
+      const c=$('wave'),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
+      data.waveform.forEach((amp,i)=>{ctx.fillStyle=i/data.waveform.length<=time/data.callerDuration?'#0b1222':'#cdd3df';const h=Math.max(3,amp*90);ctx.fillRect(i*c.width/data.waveform.length,(100-h)/2,3,h);});
+    };
+    window.promo={
+      baseline,barge,
+      render({scene,time=0,caption='',baselineDelay=0}){
+        document.body.classList.toggle('closing',scene==='closing');
+        $('caption').textContent=caption;$('reply').hidden=true;$('link').hidden=scene!=='closing';
+        $('source').textContent='The call uses synthetic speech; the model responses were recorded on Foundry.';
+        if(scene==='closing'){
+          $('title').textContent='The handoff was prepared before the caller finished.';
+          $('source').textContent='The demonstration uses synthetic speech and a simulated transfer.';
+          return;
+        }
+        if(scene==='baseline'){
+          const duration=baseline.standard.audioReadyAt-baseline.callerDuration;
+          const elapsed=Math.max(0,Math.min(duration,time-baselineDelay));
+          const at=baseline.callerDuration+elapsed;
+          $('title').textContent='The conventional assistant waits for the completed turn.';
+          $('speaker').textContent='Earlier baseline recording · GPT-6 Luna';
+          $('clock').textContent=`00:${at.toFixed(1).padStart(4,'0')}`;
+          $('edit').textContent=time<baselineDelay?'Edited excerpt: jump to the end of the recorded turn.':elapsed>=duration?'The excerpt is paused after the response becomes ready.':'The original call clock is preserved.';
+          $('state').textContent=elapsed>=duration?'The response is ready.':'The assistant is waiting.';
+          $('detail').textContent=at>=baseline.standard.generationStartedAt?'The final chat model is choosing the response.':'The assistant waits for final speech recognition.';
+          draw(baseline,baseline.callerDuration);
+          return;
+        }
+        const at=scene==='mechanism'?barge.preparedAt+.02:scene==='intro'?0:time;
+        const prepared=at>=barge.preparedAt;
+        const responding=scene==='call'&&at>=barge.playbackAt;
+        $('title').textContent=responding?'The agent responds at a pause.':'The assistant can prepare a handoff while the caller speaks.';
+        $('speaker').textContent=responding?'AI agent · Ryan HD':scene==='call'?'Customer · Sonia HD':'Recorded Decision One path';
+        $('clock').textContent=`00:${at.toFixed(1).padStart(4,'0')}`;
+        $('edit').textContent=scene==='call'?'The caller’s request is played once, at its original speed.':scene==='mechanism'?'Recorded decision from the new interruption take.':'Microsoft Decision One on Foundry';
+        $('state').textContent=responding?'The caller pauses and the agent responds.':prepared?'The handoff is permitted.':'The assistant listens and checks the transcript.';
+        $('detail').textContent=prepared?'Code prepares the approved reply and skips the final chat model call.':'Speech recognition supplies the caller’s words as they arrive.';
+        if(responding){$('reply').hidden=false;$('reply').textContent='The agent offers to connect the caller to an adviser.';$('caption').textContent=baseline.acknowledgementText;}
+        else if(scene==='call'){
+          const text=barge.transcripts.filter(e=>e.at<=at).at(-1)?.text;
+          $('caption').textContent=text?text.split(/\s+/).slice(-18).join(' '):'';
+        }
+        draw(barge,Math.min(at,barge.playbackAt));
+      }
+    };
+    window.promo.render({scene:'intro'});
+  </script>
+</body>
+</html>

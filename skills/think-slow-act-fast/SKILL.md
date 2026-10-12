@@ -1,6 +1,6 @@
 ---
 name: think-slow-act-fast
-description: Use when many agents must act continuously in games, simulations, robot fleets, routing or live operations, when per-decision LLM calls are too slow or costly, or when a Microsoft Foundry decision loop is sluggish, stale, quota-limited or erratic.
+description: Use when many agents must act continuously in games, simulations, robot fleets, routing or live operations, for early human handoff from partial speech, when per-decision LLM calls are too slow or costly, or when a Microsoft Foundry decision loop is sluggish, stale, quota-limited or erratic.
 ---
 
 # Think slow, act fast
@@ -8,6 +8,9 @@ description: Use when many agents must act continuously in games, simulations, r
 Code owns facts and safety. **Microsoft-Decision-1 on Microsoft Foundry** chooses among valid options.
 A **GitHub Copilot SDK planner on Foundry** sets strategy on a slower clock.
 Start from the runnable twelve-robot warehouse in `../../starter/`; replace its domain, not the architecture.
+For voice escalation or early routing, start with `early-handoff.md` and `../../examples/early-handoff/`.
+That variant can suppress final LLM generation once a permitted handoff commits; it need not add a planner.
+It assumes an existing voice agent and transcript stream; add the decision path, not a replacement voice stack.
 
 ## Quick reference
 
@@ -26,6 +29,7 @@ Start from the runnable twelve-robot warehouse in `../../starter/`; replace its 
 | `planner.md` | Planner setup, schema, SDK tools, telemetry, hosting |
 | `reference.md` | Interfaces, request examples, scheduler, reports |
 | `lessons.md` | Tuning, domain adaptation and visible demos |
+| `early-handoff.md` | Partial-speech escalation, atomic handoff, skipped generation, measured benefits and risks |
 
 ## Workflow and evidence
 
