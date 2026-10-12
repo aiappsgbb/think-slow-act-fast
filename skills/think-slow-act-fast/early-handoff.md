@@ -46,7 +46,7 @@ if there is no suitable gap it waits rather than cutting a word. Report any resu
 separately from model latency. This pause policy changes presentation, not the 50-case regression results.
 It does not make the two model questions independent or guarantee consent.
 
-The [87-second narrated draft](../../examples/early-handoff/narrated-draft-v2.mp4) demonstrates the
+The [87-second narrated draft](../../examples/early-handoff/narrated-draft-v5.mp4) demonstrates the
 immediate-interruption policy instead. It reuses D001's original caller audio and actual qualifying
 decision, starting the approved acknowledgement at the recorded 7.81-second readiness point, before
 the 9.4-second utterance ends. The caller yielding and transfer are simulated. This staged presentation

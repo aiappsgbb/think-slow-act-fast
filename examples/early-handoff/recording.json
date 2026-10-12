@@ -16,7 +16,9 @@
     "audioReadyAt": 12.912049583,
     "model": "gpt-6-luna",
     "gptCalls": 1,
-    "generationStartedAt": 10.967429042000001
+    "generationStartedAt": 10.967429042000001,
+    "responseAt": 12.908968875,
+    "route": "human"
   },
   "early": {
     "audioReadyAt": 7.808642542000001,
@@ -30,25 +32,85 @@
         "snapshotAt": 1.274679708,
         "receivedAt": 1.7648477080000002,
         "route": "continue",
-        "eligibility": "unclear"
+        "eligibility": "unclear",
+        "text": "i've",
+        "answers": {
+          "handoff": {
+            "type": "choice",
+            "choice": "continue",
+            "confidence": 0.9985806590526993,
+            "probabilities": {"continue": 0.9992903295263497, "human": 0.0007096704736503554}
+          },
+          "eligibility": {
+            "type": "choice",
+            "choice": "unclear",
+            "confidence": 0.5946043040167257,
+            "probabilities": {"no": 0.26845496244484796, "unclear": 0.7297362026778171, "yes": 0.0018088348773349723}
+          }
+        }
       },
       {
         "snapshotAt": 3.083293,
         "receivedAt": 3.4533648749999997,
         "route": "continue",
-        "eligibility": "no"
+        "eligibility": "no",
+        "text": "i've reset my password 3",
+        "answers": {
+          "handoff": {
+            "type": "choice",
+            "choice": "continue",
+            "confidence": 0.9943981454336517,
+            "probabilities": {"continue": 0.9971990727168258, "human": 0.0028009272831740943}
+          },
+          "eligibility": {
+            "type": "choice",
+            "choice": "no",
+            "confidence": 0.9889081465628173,
+            "probabilities": {"no": 0.9926054310418783, "unclear": 0.005902247169456604, "yes": 0.0014923217886651167}
+          }
+        }
       },
       {
         "snapshotAt": 5.178590042000001,
         "receivedAt": 5.4799651670000005,
         "route": "continue",
-        "eligibility": "no"
+        "eligibility": "no",
+        "text": "i've reset my password three times and i'm still locked out so could",
+        "answers": {
+          "handoff": {
+            "type": "choice",
+            "choice": "continue",
+            "confidence": 0.9051482634060439,
+            "probabilities": {"continue": 0.952574131703022, "human": 0.04742586829697802}
+          },
+          "eligibility": {
+            "type": "choice",
+            "choice": "no",
+            "confidence": 0.2869824086210728,
+            "probabilities": {"no": 0.5246549390807153, "unclear": 0.4630063586644407, "yes": 0.012338702254844142}
+          }
+        }
       },
       {
         "snapshotAt": 7.488753667,
         "receivedAt": 7.807833083,
         "route": "human",
-        "eligibility": "yes"
+        "eligibility": "yes",
+        "text": "i've reset my password three times and i'm still locked out so could you put me through to someone please i've got",
+        "answers": {
+          "handoff": {
+            "type": "choice",
+            "choice": "human",
+            "confidence": 0.9253462303985371,
+            "probabilities": {"continue": 0.03732688480073146, "human": 0.9626731151992686}
+          },
+          "eligibility": {
+            "type": "choice",
+            "choice": "yes",
+            "confidence": 0.9671479147677846,
+            "probabilities": {"no": 0.00958894327304439, "unclear": 0.012312446881765941, "yes": 0.9780986098451897}
+          }
+        }
       }
     ]
   },

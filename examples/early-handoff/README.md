@@ -11,15 +11,20 @@ This is an **offline replay of recorded model observations**, not a live model e
 contact-centre integration or real adviser connection. It requires no credentials or new dependencies.
 The teaching guide is [early-handoff.md](../../skills/think-slow-act-fast/early-handoff.md).
 
-The [87-second narrated draft v2](narrated-draft-v2.mp4) explains the intent and policy confidence checks,
+The [87-second narrated draft v5](narrated-draft-v5.mp4) explains the intent and policy confidence checks,
 plays the original turn-based call, then stages an immediate courteous interruption using the same caller
 audio and recorded qualifying Decision One response. The early reply starts at the recorded readiness time
 of 7.81 seconds, before the original 9.4-second utterance ends, without waiting for silence. This is a new
 presentation of recorded decisions, not a newly measured playback benchmark or a real transfer.
 The narrator retains British Ollie HD, with Sonia HD for the customer and Ryan HD for the agent. Speech
 stays at its original speed, and narration never overlaps the call. The closing shows the proposed
-integration architecture and skill link. Human auditory review remains pending.
+integration architecture and skill link. Narration visuals remain static. During call playback, the graphic
+replays each recorded native request, its actual returned probabilities and the application gate, which
+lights up when the permitted handoff qualifies. The baseline shows final transcript arrival, its LLM
+request and the returned route. These are observable API events, not model chain-of-thought.
+`recording.json` preserves all four captured response distributions. Human auditory review remains pending.
 
+The [earlier 87-second draft v2](narrated-draft-v2.mp4) remains available for reference.
 The [earlier 64-second draft](narrated-draft.mp4) remains available for reference.
 
 The new D002 take preserves the original customer PCM and adds a separately voiced continuation after a
