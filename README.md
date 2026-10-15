@@ -21,6 +21,8 @@ This repo contains:
 - **A second demonstration** ([early human handoff](examples/early-handoff/)): hear a recorded synthetic
   call through the normal turn-based path, then replay it with Microsoft-Decision-1 acting on partial speech.
   The browser example runs offline and simulates the transfer; the linked guide explains how to build it.
+- **Lessons from a game** ([Come Bye](https://aka.ms/comebye)): you steer one sheepdog and Microsoft-Decision-1
+  picks what the other one does. The [companion guide](skills/think-slow-act-fast/companion.md) covers what it taught us.
 
 For a permitted early handoff, code can play an approved acknowledgement and skip the final LLM call.
 This voice variant does not require a slow planner. It shows how code can prepare a permitted handoff
@@ -49,6 +51,7 @@ The pattern is model-agnostic; the starter is opinionated.
 | [lessons.md](skills/think-slow-act-fast/lessons.md) | What we learned: the fast loop, the slow loop, and making it visible to an audience |
 | [reference.md](skills/think-slow-act-fast/reference.md) | Interfaces, a real question and answer, the scheduler, the plan schema, the report, the metrics |
 | [early-handoff.md](skills/think-slow-act-fast/early-handoff.md) | The second demo: partial speech, human escalation, skipped generation, latency clocks, cost and adverse evidence |
+| [companion.md](skills/think-slow-act-fast/companion.md) | An AI teammate for a human player, from Come Bye: executor first, state against repetition, visible help, honest footage |
 | [starter/](starter/) | The runnable starter and its README |
 | [examples/early-handoff/](examples/early-handoff/) | Credential-free recorded call replay and tested execution/audio helpers |
 
