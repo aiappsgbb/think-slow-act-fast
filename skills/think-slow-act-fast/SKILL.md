@@ -1,6 +1,6 @@
 ---
 name: think-slow-act-fast
-description: Use when many agents must act continuously in games, simulations, robot fleets, routing or live operations, for early human handoff from partial speech, when per-decision LLM calls are too slow or costly, or when a Microsoft Foundry decision loop is sluggish, stale, quota-limited or erratic.
+description: Use when many agents must act continuously in games, simulations, robot fleets, routing or live operations, for an AI teammate or companion supporting a human player, for early human handoff from partial speech, when per-decision LLM calls are too slow or costly, or when a Microsoft Foundry decision loop is sluggish, stale, quota-limited or erratic.
 ---
 
 # Think slow, act fast
@@ -11,6 +11,7 @@ Start from the runnable twelve-robot warehouse in `../../starter/`; replace its 
 For voice escalation or early routing, start with `early-handoff.md` and `../../examples/early-handoff/`.
 That variant can suppress final LLM generation once a permitted handoff commits; it need not add a planner.
 It assumes an existing voice agent and transcript stream; add the decision path, not a replacement voice stack.
+For one model-driven teammate beside a human player, read `companion.md` first.
 
 ## Quick reference
 
@@ -30,6 +31,7 @@ It assumes an existing voice agent and transcript stream; add the decision path,
 | `reference.md` | Interfaces, request examples, scheduler, reports |
 | `lessons.md` | Tuning, domain adaptation and visible demos |
 | `early-handoff.md` | Partial-speech escalation, atomic handoff, skipped generation, measured benefits and risks |
+| `companion.md` | An AI teammate for a human player: which character gets the model, executor-first debugging, state against repetition, visible help, honest footage |
 
 ## Workflow and evidence
 
